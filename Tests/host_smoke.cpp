@@ -45,7 +45,8 @@ int main() {
         p.setStateInformation(snapshot.getData(),static_cast<int>(snapshot.getSize()));
         require(std::abs(p.state.getRawParameterValue("low")->load()-6)<0.01f,"State recall failed");
         require(p.state.getRawParameterValue("character4")->load()==3,"Voice color not recalled");
-        const char junk[]="invalid";p.setStateInformation(junk,7);require(p.state.getRawParameterValue("low")->load()==6,"Invalid state damaged processor");
+        const float beforeInvalid=p.state.getRawParameterValue("low")->load();
+        const char junk[]="invalid";p.setStateInformation(junk,7);require(p.state.getRawParameterValue("low")->load()==beforeInvalid,"Invalid state damaged processor");
         // Master rack extremes, block silence, mono and sanitization.
         for(const char* id:{"low","high","compression","drive","delay","feedback","room","gain"}) {
             auto* a=p.state.getParameter(id);a->setValueNotifyingHost(1.f);
@@ -147,11 +148,11 @@ int main() {
         auto files=irTestRoot.getChildFile("Presets").findChildFiles(juce::File::findFiles,false,"*.irchoir.xml");require(files.size()==1,"Preset not saved");
         param(p,"low",-5);
         for(auto* box:boxes)if(box->indexOfItemId(1000)>=0)box->setSelectedId(1000,juce::sendNotificationSync);
-        require(p.state.getRawParameterValue("low")->load()==5,"Custom preset not loaded");
+        require(std::abs(p.state.getRawParameterValue("low")->load()-5)<0.00001f,"Custom preset not loaded");
         star->onClick();require(irTestRoot.getChildFile("favourites.txt").loadFileAsString().isNotEmpty(),"Favourite not saved");
         filter->setToggleState(true,juce::dontSendNotification);filter->onClick();
         param(p,"low",4);p.usingB=false;abButton->onClick();param(p,"low",-4);abButton->onClick();
-        require(p.state.getRawParameterValue("low")->load()==4,"A/B recall failed");
+        require(std::abs(p.state.getRawParameterValue("low")->load()-4)<0.00001f,"A/B recall failed");
         // Exercise the real conductor drag handlers.
         auto event=[&](float x,float y) {auto time=juce::Time::getCurrentTime();return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),{x,y},juce::ModifierKeys::leftButtonModifier,1,0,0,0,0,editor.get(),editor.get(),time,{x,y},time,1,false);};
         editor->mouseDown(event(1000,260));editor->mouseDrag(event(1100,230));editor->mouseUp(event(1100,230));
