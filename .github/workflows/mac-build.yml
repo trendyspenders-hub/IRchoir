@@ -13,15 +13,25 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build universal plugins, run smoke tests and create DMG
         run: bash Scripts/build-mac.sh
+      - name: Mount DMG and install the package on the isolated runner
+        run: |
+          mount="$RUNNER_TEMP/irchoir-install-check"
+          mkdir -p "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$PWD/dist/I.R.Choir-0.3.0-unsigned.dmg"
+          trap 'hdiutil detach "$mount"' EXIT
+          sudo installer -pkg "$mount/I.R.Choir-0.3.0-unsigned.pkg" -target / > build/install.log 2>&1
+          for bundle in '/Library/Audio/Plug-Ins/Components/IRChoir.component' '/Library/Audio/Plug-Ins/VST3/IRChoir.vst3'; do
+            test -d "$bundle"
+            codesign --verify --strict "$bundle"
+            xcrun lipo "$bundle/Contents/MacOS/IRChoir" -verify_arch arm64 x86_64
+          done
       - name: Validate VST3 with pluginval 1.0.4
         run: |
           curl --fail --location --retry 2 https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip -o "$RUNNER_TEMP/pluginval.zip"
           unzip -q "$RUNNER_TEMP/pluginval.zip" -d "$RUNNER_TEMP/pluginval"
-          "$RUNNER_TEMP/pluginval/pluginval.app/Contents/MacOS/pluginval" --strictness-level 5 --random-seed 12345 --validate "$PWD/build/IRChoir_artefacts/Release/VST3/IRChoir.vst3" > build/pluginval.log 2>&1
+          "$RUNNER_TEMP/pluginval/pluginval.app/Contents/MacOS/pluginval" --strictness-level 5 --random-seed 12345 --validate "/Library/Audio/Plug-Ins/VST3/IRChoir.vst3" > build/pluginval.log 2>&1
       - name: Validate installed AU on the isolated Mac runner
         run: |
-          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
-          ditto 'build/IRChoir_artefacts/Release/AU/IRChoir.component' "$HOME/Library/Audio/Plug-Ins/Components/IRChoir.component"
           auval -v aumf IrCh IrAu > build/auval.log 2>&1
       - name: Save test logs and native editor snapshot
         if: always()
@@ -32,6 +42,7 @@ jobs:
             build/Testing/Temporary/LastTest.log
             build/IRChoir-editor-smoke.png
             build/IRChoir-reverb-smoke.png
+            build/install.log
             build/auval.log
             build/pluginval.log
       - name: Upload Mac installer

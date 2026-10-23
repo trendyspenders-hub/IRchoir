@@ -11,7 +11,7 @@ au='build/IRChoir_artefacts/Release/AU/IRChoir.component'
 vst='build/IRChoir_artefacts/Release/VST3/IRChoir.vst3'
 [[ -d "$au" && -d "$vst" ]] || { echo 'Both compiled plugin bundles are required; nothing packaged.' >&2; exit 1; }
 for binary in "$au/Contents/MacOS/IRChoir" "$vst/Contents/MacOS/IRChoir"; do
-  xcrun lipo -verify_arch arm64 x86_64 "$binary"
+  xcrun lipo "$binary" -verify_arch arm64 x86_64
 done
 ditto "$au" "$work/root/Library/Audio/Plug-Ins/Components/IRChoir.component"
 ditto "$vst" "$work/root/Library/Audio/Plug-Ins/VST3/IRChoir.vst3"
