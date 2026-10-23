@@ -1,0 +1,31 @@
+I.R.CHOIR 0.3.0
+Your voice. An ensemble.
+
+THIS ZIP IS A SOURCE AND DOCUMENTATION BUNDLE, NOT A MAC INSTALLER.
+No .dmg, .pkg, AU or VST3 Mac binary is included.
+
+READ FIRST
+  Documentation/IRChoir-Quick-Start.pdf
+  Documentation/IRChoir-User-Guide.pdf
+  Documentation/IRChoir-Release-and-Test-Report.pdf
+
+SEE THE ACTUAL NATIVE INTERFACE
+  TestEvidence/IRChoir-Native-Interface.png
+
+CREATE A MAC INSTALLER
+  On a Mac with CMake and Xcode command line tools, double-click:
+  Build-I.R.Choir.command
+
+  Or upload this folder's contents, INCLUDING .github, to the root of a
+  dedicated GitHub repository. Push to main/master or run the Mac build
+  workflow in Actions. After a SUCCESSFUL workflow, download its DMG artifact.
+
+THE GENERATED DMG IS DESIGNED TO CONTAIN
+  A branded Apple package installer for IRChoir.component (AU) and
+  IRChoir.vst3, the PDF guides, audit, licenses and corresponding source.
+  Actual Mac build, validation and installation have not yet been run here.
+
+STATUS
+  Linux VST3 build, processor/editor smoke and pluginval level 5 passed.
+  Mac AU/VST3, Mac installer, DAW tests and real-vocal listening remain.
+  There are no trained AI singers or text-to-singing features in this version.

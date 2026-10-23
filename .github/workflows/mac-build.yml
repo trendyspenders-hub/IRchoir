@@ -1,0 +1,41 @@
+name: Build and audit Mac DMG
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal plugins, run smoke tests and create DMG
+        run: bash Scripts/build-mac.sh
+      - name: Validate VST3 with pluginval 1.0.4
+        run: |
+          curl --fail --location --retry 2 https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip -o "$RUNNER_TEMP/pluginval.zip"
+          unzip -q "$RUNNER_TEMP/pluginval.zip" -d "$RUNNER_TEMP/pluginval"
+          "$RUNNER_TEMP/pluginval/pluginval.app/Contents/MacOS/pluginval" --strictness-level 5 --random-seed 12345 --validate "$PWD/build/IRChoir_artefacts/Release/VST3/IRChoir.vst3" > build/pluginval.log 2>&1
+      - name: Validate installed AU on the isolated Mac runner
+        run: |
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          ditto 'build/IRChoir_artefacts/Release/AU/IRChoir.component' "$HOME/Library/Audio/Plug-Ins/Components/IRChoir.component"
+          auval -v aumf IrCh IrAu > build/auval.log 2>&1
+      - name: Save test logs and native editor snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: I.R.Choir-Mac-Test-Evidence
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build/IRChoir-editor-smoke.png
+            build/auval.log
+            build/pluginval.log
+      - name: Upload Mac installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: I.R.Choir-Mac-DMG-unsigned
+          path: dist/
+          if-no-files-found: error

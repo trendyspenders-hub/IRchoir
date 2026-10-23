@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+  <title>I.R.Choir 0.3.0</title>
+  <welcome file="Welcome.html" mime-type="text/html"/>
+  <readme file="Readme.html" mime-type="text/html"/>
+  <license file="LICENSE.txt" mime-type="text/plain"/>
+  <options customize="never" require-scripts="false" hostArchitectures="x86_64,arm64"/>
+  <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+  <volume-check><allowed-os-versions><os-version min="12.0"/></allowed-os-versions></volume-check>
+  <choices-outline><line choice="choir"/></choices-outline>
+  <choice id="choir" visible="false" title="I.R.Choir AU and VST3">
+    <pkg-ref id="audio.ir.choir.installer"/>
+  </choice>
+  <pkg-ref id="audio.ir.choir.installer" version="0.3.0" onConclusion="none">payload.pkg</pkg-ref>
+</installer-gui-script>

@@ -1,0 +1,3 @@
+2 layers: 0.0260043 seconds to render 2 seconds; 1.30022% of one core's real-time budget
+12 layers: 0.0741401 seconds to render 2 seconds; 3.70701% of one core's real-time budget
+32 layers: 0.171259 seconds to render 2 seconds; 8.56293% of one core's real-time budget
