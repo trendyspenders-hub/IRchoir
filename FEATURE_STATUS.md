@@ -27,3 +27,5 @@ See AUDIT.md for explicit executed coverage and remaining release gates.
 Detailed vector singers include varied faces, skin tones, hairstyles, robes and audio-reactive mouths. These are visual identities, not trained voice identities. Reduced motion keeps mouths and glow static.
 
 Reverb space page: six algorithmic settings, pre-delay, decay shape, width, damping, low/high send-filter toggles and frequencies, mono send, freeze, wet-only and bypass. Automated checks cover dry bypass, delayed wet onset, all 192 room/toggle combinations, and state recall.
+
+Direct vocal import: local WAV/AIFF/FLAC, background decode, Play/Stop/Loop, file/DAW source switch, sample-rate conversion and project file references. The source performance supplies lyrics to all choir layers; there is no transcription, voice-cloning model or new-lyric generation. Playback is manually controlled and recordings are not embedded in presets.

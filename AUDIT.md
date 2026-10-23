@@ -87,3 +87,6 @@ no unrelated repository was modified.
 
 ## Detailed choir and reverb update
 Native Release build and both CTest targets pass after the visual/reverb changes. pluginval 1.0.4 strictness 5 passes (GUI tests skipped; native editor separately exercised). Reverb checks cover exact initial bypass, wet-only pre-delay, a nonzero tail, all six rooms across 32 toggle combinations, and state recall. Updated native performance/reverb screenshots are included. Visual singer identities are decorative; the audio still uses synthetic voice colors. Mac execution remains pending.
+
+## Direct vocal import
+A generated mono WAV is decoded and passed through the actual processor at a different host sample rate. Tests check nonzero playback, end-of-file stop, repeated looping, stopped silence, DAW input switching, failed-file retention, project file reference and actual choir-layer activity. Import limits: mono/stereo, 8-192 kHz, five minutes and 128 MiB decoded. Decode, allocation and old-clip destruction run off the audio callback; the callback uses a nonblocking try-lock and in-memory reads. Manual transport is independent of the DAW. Audio is referenced by path, not embedded. Real-vocal listening and target-host testing are still required.

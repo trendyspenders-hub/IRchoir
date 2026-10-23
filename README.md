@@ -103,3 +103,25 @@ contains the original replacement logo and branded Apple Installer welcome,
 readme and license screens. The Mac packaging script uses productbuild for that
 flow, and includes the PDF guides in the generated DMG. The Mac flow is prepared
 and statically checked, but has not been executed on macOS here.
+
+## Import one vocal and create a choir
+Click **Load vocal**, or drop one WAV, AIFF or FLAC file anywhere on the editor.
+Once loaded, **File input** selects that recording instead of DAW track audio.
+Press **Play** to feed the recording through the full choir engine; **Stop**
+rewinds it, and **Loop** repeats it. The same recorded words and performance
+are used for every layer; no lyric entry or transcription is needed.
+Set Choir Mix to 100% to hear the ensemble by itself, then adjust voices,
+harmony, humanize, formation and effects. Synthetic pitch processing can change
+word clarity, so start with unison, subtle timing and a moderate choir size.
+
+Playback is manual and independent of the DAW transport; the DAW audio engine
+must be running. Source audio stays local. The entire recording decodes on a
+worker before playback: mono/stereo, 8-192 kHz, up to five minutes and 128 MiB
+decoded. The callback reads memory and converts the sample rate with linear
+interpolation. There is no AI lyric generation, voice cloning or trained singer
+conversion. Loop edges use short fades. Stop allows existing effect tails to decay.
+
+DAW project state remembers the absolute file path, source switch and loop
+setting. Playback restores stopped. Audio is not embedded: keep the original
+file in place, or use Load vocal again to relink after moving it. Sound presets
+and A/B compare sound settings; they do not package recordings.

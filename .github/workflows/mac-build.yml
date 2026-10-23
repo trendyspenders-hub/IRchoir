@@ -31,6 +31,7 @@ jobs:
           path: |
             build/Testing/Temporary/LastTest.log
             build/IRChoir-editor-smoke.png
+            build/IRChoir-reverb-smoke.png
             build/auval.log
             build/pluginval.log
       - name: Upload Mac installer

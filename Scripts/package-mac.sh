@@ -45,6 +45,7 @@ else
 fi
 mkdir -p "$work/image/Documentation"
 cp Documentation/*.pdf "$work/image/Documentation/"
+cp Documentation/VOCAL-IMPORT.txt "$work/image/Documentation/"
 cp INSTALL_MAC.md "$work/image/READ-ME-FIRST.txt"
 cp AUDIT.md "$work/image/BUILD-AUDIT.txt"
 cp LICENSE.txt "$work/image/LICENSE.txt"

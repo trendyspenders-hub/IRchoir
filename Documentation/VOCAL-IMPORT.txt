@@ -1,0 +1,23 @@
+I.R.Choir - Import one recording and create a choir
+
+1. Click Load vocal, or drop a WAV, AIFF or FLAC vocal on the editor.
+2. Wait for its filename to appear; File input becomes selected.
+3. Press Play. Every choir layer uses the recorded lyrics and performance.
+4. Adjust Ensemble Size, Choir Mix, Humanize, harmony and Reverb space.
+5. Use Loop for repeated playback. Stop rewinds the recording.
+6. Turn File input off to process your DAW track audio again.
+
+Playback is manual and independent of the DAW transport. Keep the DAW audio
+engine running; some hosts require their transport to run for plugin audio.
+Use a clean, isolated singing recording for the best starting point. All
+words come from that audio: no typed lyrics, transcription or AI voice
+cloning are involved. Pitch-shifted layers can alter consonant clarity.
+
+Limits: mono/stereo, 8-192 kHz, five minutes, 128 MiB of decoded audio.
+Files decode locally in the background before playback. Loop boundaries use
+short fades, and stopping permits existing effect tails to decay.
+
+DAW project state remembers the original absolute path, source switch and
+loop setting. Playback restores stopped. Audio is not embedded: retain the
+original file, or relink it with Load vocal after moving it. Sound presets
+and A/B compare sound settings and do not package recordings.

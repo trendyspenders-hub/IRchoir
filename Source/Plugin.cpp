@@ -4,6 +4,7 @@
 #include <cmath>
 #include <atomic>
 #include "PitchTools.h"
+#include "VocalFilePlayer.h"
 #include <map>
 #include <bitset>
 
@@ -13,6 +14,7 @@ static juce::File irTestRoot=juce::File::getSpecialLocation(juce::File::tempDire
 // Original vocal ensemble DSP. No AI models or sampled voices.
 class IRChoir final : public juce::AudioProcessor {
 public:
+    VocalFilePlayer vocalFile;
     juce::UndoManager undoManager{30000};
     juce::AudioProcessorValueTreeState state;
     static auto parameters() {
@@ -150,6 +152,7 @@ public:
         juce::ScopedNoDenormals guard;
         const int channels=b.getNumChannels();
         if(ring.empty() || channels<1) {b.clear();return;}
+        vocalFile.render(b,sr);
         mix.setTargetValue(raw("mix"));width.setTargetValue(raw("spread"));motion.setTargetValue(raw("movement"));
         gain.setTargetValue(juce::Decibels::decibelsToGain(raw("gain")));
         const int n=juce::jlimit(2,32,static_cast<int>(raw("voices")));
@@ -313,8 +316,14 @@ public:
     bool usingB=false;
     bool hasEditor() const override { return true; }
     juce::AudioProcessorEditor* createEditor() override;
-    void getStateInformation(juce::MemoryBlock& out) override { auto xml=state.copyState().createXml(); copyXmlToBinary(*xml,out); }
-    void setStateInformation(const void* data,int size) override { auto xml=getXmlFromBinary(data,size); if(xml && xml->hasTagName(state.state.getType())) state.replaceState(juce::ValueTree::fromXml(*xml)); }
+    void getStateInformation(juce::MemoryBlock& out) override { auto tree=state.copyState();tree.setProperty("vocalFilePath",vocalFile.path(),nullptr);tree.setProperty("vocalFileEnabled",vocalFile.enabled.load(),nullptr);tree.setProperty("vocalFileLoop",vocalFile.loop.load(),nullptr);auto xml=tree.createXml(); copyXmlToBinary(*xml,out); }
+    void setStateInformation(const void* data,int size) override { auto xml=getXmlFromBinary(data,size); if(xml && xml->hasTagName(state.state.getType())) {
+        auto tree=juce::ValueTree::fromXml(*xml);state.replaceState(tree);
+        vocalFile.stop();vocalFile.loop.store(static_cast<bool>(tree.getProperty("vocalFileLoop",false)));
+        auto path=tree.getProperty("vocalFilePath").toString();
+        if(path.isNotEmpty())vocalFile.loadFile(juce::File(path),static_cast<bool>(tree.getProperty("vocalFileEnabled",false)));
+        vocalFile.enabled.store(static_cast<bool>(tree.getProperty("vocalFileEnabled",false)));
+    } }
 private:
     float raw(const juce::String& id) const {return state.getRawParameterValue(id)->load();}
     double sr=44100;
@@ -343,7 +352,7 @@ private:
 };
 
 
-class ChoirEditor final : public juce::AudioProcessorEditor, private juce::Timer {
+class ChoirEditor final : public juce::AudioProcessorEditor, private juce::Timer, public juce::FileDragAndDropTarget {
     using Attachment=juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment=juce::AudioProcessorValueTreeState::ButtonAttachment;
 public:
@@ -413,6 +422,9 @@ public:
         harmonyBox.setVisible(!reverbPage);monoButton.setVisible(!reverbPage);clearClip.setVisible(!reverbPage);
         for(int j=0;j<6;++j) {reverbButtons[j].setVisible(reverbPage);reverbButtons[j].setBounds(230+j*100,fxY+164,95,28);}
         if(reverbPage)roomBox.setBounds(30,fxY+164,190,28);
+        loadVocal.setBounds(30,163,105,25);playVocal.setBounds(140,163,70,25);
+        loopVocal.setBounds(215,163,65,25);fileInput.setBounds(285,163,110,25);
+        fileLabel.setBounds(405,163,getWidth()-720,25);
         helpLabel.setBounds(30,getHeight()-54,getWidth()-60,24);
         for(int i=0;i<6;++i) {knobs[i].setVisible(view.getSelectedId()==1);labels[i].setVisible(view.getSelectedId()==1);}
         const int bottom=getHeight()-250, cell=(getWidth()-60)/6;
@@ -470,8 +482,8 @@ public:
         }
         g.setColour(juce::Colour(0xffadb4cd)); g.setFont(12.f);
         g.drawText("SHIFT-CLICK: GROUP     DRAG: PAN + LEVEL     DOUBLE-CLICK: MUTE",30,137,getWidth()-320,20,juce::Justification::centred);
-        g.drawText("LEFT",static_cast<int>(st.getX()),static_cast<int>(st.getY()-24),100,20,juce::Justification::left);
-        g.drawText("RIGHT",static_cast<int>(st.getRight()-100),static_cast<int>(st.getY()-24),100,20,juce::Justification::right);
+        g.drawText("LEFT",static_cast<int>(st.getX()),static_cast<int>(st.getY()+2),100,20,juce::Justification::left);
+        g.drawText("RIGHT",static_cast<int>(st.getRight()-100),static_cast<int>(st.getY()+2),100,20,juce::Justification::right);
         g.setColour(juce::Colour(0xff818ba5)); g.setFont(11.f);
         g.drawText("VOCAL ENSEMBLE EFFECT  /  AUDIO-REACTIVE STAGE  /  v0.3 SOURCE PROTOTYPE / SYNTHETIC VOICE COLORS",30,getHeight()-23,getWidth()-60,17,juce::Justification::centred);
     }
@@ -507,6 +519,12 @@ public:
         int hit=hitSinger(e.position); if(hit>=0) { selectedSet.reset();selectedSet.set(static_cast<size_t>(hit));select(hit); auto id="mute"+juce::String(hit); set(id,value(id)>0.5f?0.f:1.f); }
     }
     ~ChoirEditor() override { endDrag(); }
+    bool isInterestedInFileDrag(const juce::StringArray& files) override {
+        return files.size()==1 && juce::File(files[0]).hasFileExtension("wav;aif;aiff;flac");
+    }
+    void filesDropped(const juce::StringArray& files,int,int) override {
+        if(isInterestedInFileDrag(files))processor.vocalFile.loadFile(juce::File(files[0]));
+    }
 private:
     IRChoir& processor;
     std::array<juce::Slider,6> knobs;
@@ -541,7 +559,9 @@ private:
     juce::TextButton groupMute,groupSolo,savePreset,favourite,favOnly,ab,copyAB,monoButton,clearClip;
     std::unique_ptr<ButtonAttachment> monoAttachment;
     juce::TextEditor saveName;
-    juce::Label helpLabel;
+    juce::Label helpLabel,fileLabel;
+    juce::TextButton loadVocal,playVocal,loopVocal,fileInput;
+    std::unique_ptr<juce::FileChooser> vocalChooser;
     std::array<juce::TextButton,6> reverbButtons;
     std::array<std::unique_ptr<ButtonAttachment>,6> reverbAttachments;
     juce::StringArray userPaths,favourites;
@@ -701,6 +721,10 @@ private:
         currentPreset="Factory:"+juce::String(p);
     }
     void timerCallback() override {
+        fileLabel.setText(processor.vocalFile.status(),juce::dontSendNotification);
+        fileInput.setToggleState(processor.vocalFile.enabled.load(),juce::dontSendNotification);
+        loopVocal.setToggleState(processor.vocalFile.loop.load(),juce::dontSendNotification);
+        playVocal.setButtonText(processor.vocalFile.playing.load()?"Stop":"Play");
         for(int i=0;i<32;++i) displayMeters[i]=juce::jmax(processor.meters[i].load(std::memory_order_relaxed),displayMeters[i]*0.87f);
         if(selected>=static_cast<int>(value("voices")))select(0);
         outputDisplayL=std::max(processor.outputL.load(),outputDisplayL*0.9f);outputDisplayR=std::max(processor.outputR.load(),outputDisplayR*0.9f);
@@ -712,6 +736,22 @@ private:
     }
 };
 void ChoirEditor::setupExtras() {
+    for(auto* button:{&loadVocal,&playVocal,&loopVocal,&fileInput})addAndMakeVisible(*button);
+    addAndMakeVisible(fileLabel);fileLabel.setFont(juce::Font(11.f));fileLabel.setColour(juce::Label::textColourId,juce::Colour(0xffb4bdd1));
+    loadVocal.setButtonText("Load vocal");loadVocal.setComponentID("load-vocal");
+    playVocal.setButtonText("Play");loopVocal.setButtonText("Loop");fileInput.setButtonText("File input");
+    loopVocal.setClickingTogglesState(true);fileInput.setClickingTogglesState(true);
+    playVocal.onClick=[this]{processor.vocalFile.togglePlayback();};
+    loopVocal.onClick=[this]{processor.vocalFile.loop.store(loopVocal.getToggleState());};
+    fileInput.onClick=[this]{processor.vocalFile.enabled.store(fileInput.getToggleState());};
+    loadVocal.onClick=[this]{
+        vocalChooser=std::make_unique<juce::FileChooser>("Choose a dry vocal recording",juce::File{},"*.wav;*.aif;*.aiff;*.flac");
+        juce::Component::SafePointer<ChoirEditor> safe(this);
+        vocalChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe](const juce::FileChooser& chooser){
+            if(safe && chooser.getResult().existsAsFile())safe->processor.vocalFile.loadFile(chooser.getResult());
+        });
+    };
+    fileInput.setTooltip("On: imported vocal. Off: audio from your DAW track. Playback is manual, independent of the DAW transport.");
     addAndMakeVisible(undoButton);addAndMakeVisible(redoButton);
     undoButton.setButtonText("Undo");redoButton.setButtonText("Redo");
     undoButton.onClick=[this]{endDrag();processor.undoManager.undo();};redoButton.onClick=[this]{endDrag();processor.undoManager.redo();};

@@ -85,6 +85,42 @@ int main() {
             r.setStateInformation(state.getData(),static_cast<int>(state.getSize()));
             require(r.state.getRawParameterValue("reverbFreeze")->load()==1,"Reverb state not recalled");
         }
+        // Direct file import: decode a real WAV and pass it through the processor.
+        {
+            irTestRoot.createDirectory();auto file=irTestRoot.getChildFile("Test vocal.wav");
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(file.createOutputStream().release(),44100,1,16,{},0));
+            require(writer!=nullptr,"Cannot create import test WAV");
+            juce::AudioBuffer<float> source(1,4410);
+            for(int n=0;n<4410;++n)source.setSample(0,n,0.2f*std::sin(static_cast<float>(2*ir::pi*220*n/44100.)));
+            require(writer->writeFromAudioSampleBuffer(source,0,4410),"Cannot write import WAV");writer.reset();
+            IRChoir fileProcessor;param(fileProcessor,"mix",0);param(fileProcessor,"room",0);param(fileProcessor,"gain",0);
+            require(fileProcessor.vocalFile.loadForTest(file),"WAV import failed");
+            require(!fileProcessor.vocalFile.playing.load(),"Import auto-played");
+            fileProcessor.prepareToPlay(48000,256);fileProcessor.vocalFile.togglePlayback();
+            juce::AudioBuffer<float> out(2,256);juce::MidiBuffer midi;float energy=0;
+            for(int k=0;k<25;++k){out.clear();fileProcessor.processBlock(out,midi);energy+=out.getMagnitude(0,256);}
+            require(energy>0.1f,"Imported vocal did not reach DSP output");
+            require(!fileProcessor.vocalFile.playing.load(),"Playback failed to stop at file end");
+            fileProcessor.vocalFile.loop.store(true);fileProcessor.vocalFile.togglePlayback();
+            for(int k=0;k<40;++k){out.clear();fileProcessor.processBlock(out,midi);}
+            require(fileProcessor.vocalFile.playing.load(),"Loop failed across file end");
+            // The imported recording also feeds the actual ensemble, not just preview playback.
+            param(fileProcessor,"mix",1);fileProcessor.vocalFile.stop();fileProcessor.vocalFile.togglePlayback();
+            float singerPeak=0;
+            for(int k=0;k<30;++k){out.clear();fileProcessor.processBlock(out,midi);for(auto& peak:fileProcessor.meters)singerPeak=std::max(singerPeak,peak.load());}
+            require(singerPeak>0.001f,"Imported vocal did not drive the choir layers");
+            param(fileProcessor,"mix",0);fileProcessor.prepareToPlay(48000,256);
+            fileProcessor.vocalFile.stop();out.clear();fileProcessor.processBlock(out,midi);
+            require(out.getMagnitude(0,256)<0.00001f,"Stopped file leaked audio");
+            fileProcessor.vocalFile.enabled.store(false);out.clear();out.applyGain(0);out.setSample(0,128,0.2f);fileProcessor.processBlock(out,midi);
+            require(std::abs(out.getSample(0,128)-0.2f)<0.00001f,"DAW input switch failed");
+            require(!fileProcessor.vocalFile.loadForTest(irTestRoot.getChildFile("missing.wav")),"Missing file accepted");
+            require(fileProcessor.vocalFile.path()==file.getFullPathName(),"Failed import discarded prior vocal");
+            juce::MemoryBlock saved;fileProcessor.getStateInformation(saved);
+            auto xml=juce::AudioProcessor::getXmlFromBinary(saved.getData(),static_cast<int>(saved.getSize()));
+            require(xml && xml->getStringAttribute("vocalFilePath")==file.getFullPathName(),"Project did not remember file reference");
+        }
         // Instantiate the actual native editor, resize, exercise every factory preset/page/formation/group.
         std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());require(editor!=nullptr,"No editor");
         editor->setSize(1180,960);editor->setSize(1500,1100);editor->setSize(1180,960);
