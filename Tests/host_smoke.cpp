@@ -261,6 +261,14 @@ int main() {
         filter->setToggleState(true,juce::dontSendNotification);filter->onClick();
         param(p,"low",4);p.usingB=false;abButton->onClick();param(p,"low",-4);abButton->onClick();
         require(std::abs(p.state.getRawParameterValue("low")->load()-4)<0.00001f,"A/B recall failed");
+        {
+            auto invalid=p.state.copyState();for(auto child:invalid)if(child.getProperty("id").toString()=="low")child.setProperty("value","nan",nullptr);
+            auto file=irTestRoot.getChildFile("Presets/invalid.irchoir.xml");require(invalid.createXml()->writeTo(file),"Cannot write invalid preset fixture");
+            filter->setToggleState(false,juce::dontSendNotification);filter->onClick();
+            const float before=p.state.getRawParameterValue("low")->load();bool selected=false;
+            for(auto* box:boxes)if(box->indexOfItemId(1000)>=0)for(int i=0;i<box->getNumItems();++i)if(box->getItemText(i).contains("invalid")){box->setSelectedId(box->getItemId(i),juce::sendNotificationSync);selected=true;}
+            require(selected && p.state.getRawParameterValue("low")->load()==before,"Malformed custom preset changed sound state");
+        }
         // Exercise the real conductor drag handlers.
         auto event=[&](float x,float y) {auto time=juce::Time::getCurrentTime();return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),{x,y},juce::ModifierKeys::leftButtonModifier,1,0,0,0,0,editor.get(),editor.get(),time,{x,y},time,1,false);};
         editor->mouseDown(event(1000,260));editor->mouseDrag(event(1100,230));editor->mouseUp(event(1100,230));

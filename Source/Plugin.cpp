@@ -340,15 +340,19 @@ public:
         state.state.setProperty("spacePresetName",preset.name,&undoManager);
     }
     void getStateInformation(juce::MemoryBlock& out) override { auto tree=state.copyState();tree.setProperty("vocalFilePath",vocalFile.path(),nullptr);tree.setProperty("vocalFileEnabled",vocalFile.enabled.load(),nullptr);tree.setProperty("vocalFileLoop",vocalFile.loop.load(),nullptr);auto xml=tree.createXml(); copyXmlToBinary(*xml,out); }
-    void setStateInformation(const void* data,int size) override { auto xml=getXmlFromBinary(data,size); if(xml && xml->hasTagName(state.state.getType())) {
-        auto tree=juce::ValueTree::fromXml(*xml);
+    bool applySoundState(const juce::ValueTree& source) {
+        if(!source.isValid() || source.getType()!=state.state.getType())return false;
+        auto tree=source.createCopy();
         for(auto child:tree)if(auto* parameter=state.getParameter(child.getProperty("id").toString())) {
             auto text=child.getProperty("value").toString();std::istringstream input(text.toStdString());input.imbue(std::locale::classic());
-            double number=0;input>>number;if(!input || !std::isfinite(number))return;input>>std::ws;if(!input.eof())return;
+            double number=0;input>>number;if(!input || !std::isfinite(number))return false;input>>std::ws;if(!input.eof())return false;
             const auto range=parameter->getNormalisableRange();
             child.setProperty("value",range.snapToLegalValue(static_cast<float>(std::clamp(number,static_cast<double>(range.start),static_cast<double>(range.end)))),nullptr);
         }
-        state.replaceState(tree);
+        state.replaceState(tree);return true;
+    }
+    void setStateInformation(const void* data,int size) override { auto xml=getXmlFromBinary(data,size); if(xml && xml->hasTagName(state.state.getType())) {
+        auto tree=juce::ValueTree::fromXml(*xml);if(!applySoundState(tree))return;
         vocalFile.stop();vocalFile.loop.store(static_cast<bool>(tree.getProperty("vocalFileLoop",false)));
         auto path=tree.getProperty("vocalFilePath").toString();
         vocalFile.loadFile(path.isNotEmpty()?juce::File(path):juce::File{},static_cast<bool>(tree.getProperty("vocalFileEnabled",false)),true);
@@ -1009,8 +1013,8 @@ void ChoirEditor::choosePreset(int id) {
     if(id>=1 && id<=9)applyPreset(id);
     else if(id>=1000 && id-1000<userPaths.size()) {
         auto path=userPaths[id-1000];auto xml=juce::XmlDocument::parse(juce::File(path));
-        if(xml && xml->hasTagName("IRChoir")) {processor.state.replaceState(juce::ValueTree::fromXml(*xml));currentPreset=path;processor.state.state.setProperty("soundPresetKey",currentPreset,nullptr);}
-        else helpLabel.setText("This preset could not be read.",juce::dontSendNotification);
+        if(xml && xml->hasTagName("IRChoir") && processor.applySoundState(juce::ValueTree::fromXml(*xml))) {currentPreset=path;processor.state.state.setProperty("soundPresetKey",currentPreset,nullptr);}
+        else helpLabel.setText("This preset is unreadable or contains invalid parameter values.",juce::dontSendNotification);
     }
 }
 void ChoirEditor::groupAdjust(const char* prefix,float amount,bool relative) {
