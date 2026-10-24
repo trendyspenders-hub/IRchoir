@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(IRChoir VERSION 0.3.0)
+project(IRChoir VERSION 0.3.1)
 set(CMAKE_CXX_STANDARD 17)
 if(APPLE)
     set(IRCHOIR_FORMATS AU VST3)

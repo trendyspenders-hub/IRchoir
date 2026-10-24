@@ -5,6 +5,7 @@
 #include <atomic>
 #include "PitchTools.h"
 #include "VocalFilePlayer.h"
+#include "SpacePresets.h"
 #include <map>
 #include <bitset>
 
@@ -316,6 +317,22 @@ public:
     bool usingB=false;
     bool hasEditor() const override { return true; }
     juce::AudioProcessorEditor* createEditor() override;
+    void applySpacePreset(size_t index) {
+        if(index>=ir::spacePresets.size())return;
+        const auto& preset=ir::spacePresets[index];
+        undoManager.beginNewTransaction("Reverb place preset");
+        auto put=[this](const char* id,float value) {
+            auto* parameter=state.getParameter(id);parameter->beginChangeGesture();
+            state.getParameterAsValue(id).setValue(parameter->getNormalisableRange().snapToLegalValue(value));
+            parameter->endChangeGesture();
+        };
+        put("roomType",static_cast<float>(preset.room));put("revPredelay",preset.predelay);
+        put("revDecay",preset.decay);put("revWidth",preset.width);put("revDamping",preset.damping);
+        put("revLowCut",preset.lowCut);put("revHighCut",preset.highCut);put("room",preset.amount);
+        put("reverbOn",1);put("reverbLowCutOn",1);put("reverbHighCutOn",1);
+        put("reverbMonoSend",0);put("reverbFreeze",0);put("reverbWetOnly",0);
+        state.state.setProperty("spacePresetName",preset.name,&undoManager);
+    }
     void getStateInformation(juce::MemoryBlock& out) override { auto tree=state.copyState();tree.setProperty("vocalFilePath",vocalFile.path(),nullptr);tree.setProperty("vocalFileEnabled",vocalFile.enabled.load(),nullptr);tree.setProperty("vocalFileLoop",vocalFile.loop.load(),nullptr);auto xml=tree.createXml(); copyXmlToBinary(*xml,out); }
     void setStateInformation(const void* data,int size) override { auto xml=getXmlFromBinary(data,size); if(xml && xml->hasTagName(state.state.getType())) {
         auto tree=juce::ValueTree::fromXml(*xml);state.replaceState(tree);
@@ -421,7 +438,12 @@ public:
         const bool reverbPage=view.getSelectedId()==7;
         harmonyBox.setVisible(!reverbPage);monoButton.setVisible(!reverbPage);clearClip.setVisible(!reverbPage);
         for(int j=0;j<6;++j) {reverbButtons[j].setVisible(reverbPage);reverbButtons[j].setBounds(230+j*100,fxY+164,95,28);}
-        if(reverbPage)roomBox.setBounds(30,fxY+164,190,28);
+        roomBox.setVisible(!reverbPage);placeBox.setVisible(reverbPage);
+        if(reverbPage) {
+            placeBox.setBounds(30,fxY+164,310,28);
+            for(int j=0;j<6;++j)reverbButtons[j].setBounds(350+j*100,fxY+164,95,28);
+            undoButton.setBounds(965,fxY+164,75,28);redoButton.setBounds(1050,fxY+164,75,28);
+        }
         loadVocal.setBounds(30,163,105,25);playVocal.setBounds(140,163,70,25);
         loopVocal.setBounds(215,163,65,25);fileInput.setBounds(285,163,110,25);
         fileLabel.setBounds(405,163,getWidth()-720,25);
@@ -551,7 +573,7 @@ private:
     std::vector<Extra> extraSliders;
     std::array<juce::TextButton,5> groups;
     float lastGroupPan=0;
-    juce::ComboBox formation,view,animationBox,harmonyBox,roomBox,characterBox;
+    juce::ComboBox formation,view,animationBox,harmonyBox,roomBox,characterBox,placeBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> animationAttachment,harmonyAttachment,roomAttachment,characterAttachment;
     juce::Slider groupPan,groupLevel;
     juce::TooltipWindow tooltips{this,500};
@@ -718,9 +740,19 @@ private:
         if(p==7) {set("delay",0.25f);set("delayTime",380);set("high",-3);}
         if(p==8) {set("roomType",2);set("delay",0.12f);set("delayTime",170);}
         if(p==9) {set("drive",0.25f);set("compression",0.4f);set("drift",15);set("vibrato",12);}
+        processor.state.state.removeProperty("spacePresetName",nullptr);
         currentPreset="Factory:"+juce::String(p);
     }
     void timerCallback() override {
+        const auto placeName=processor.state.state.getProperty("spacePresetName").toString();
+        juce::String placeText;
+        for(const auto& preset:ir::spacePresets)if(placeName==preset.name) {
+            const char* ids[]={"roomType","revPredelay","revDecay","revWidth","revDamping","revLowCut","revHighCut","room","reverbOn","reverbLowCutOn","reverbHighCutOn","reverbMonoSend","reverbFreeze","reverbWetOnly"};
+            const float expected[]={static_cast<float>(preset.room),preset.predelay,preset.decay,preset.width,preset.damping,preset.lowCut,preset.highCut,preset.amount,1,1,1,0,0,0};
+            bool edited=false;for(int j=0;j<14;++j)edited=edited || std::abs(value(ids[j])-expected[j])>0.001f;
+            placeText=placeName+(edited?" (edited)":"");break;
+        }
+        if(placeBox.getText()!=placeText)placeBox.setText(placeText,juce::dontSendNotification);
         fileLabel.setText(processor.vocalFile.status(),juce::dontSendNotification);
         fileInput.setToggleState(processor.vocalFile.enabled.load(),juce::dontSendNotification);
         loopVocal.setToggleState(processor.vocalFile.loop.load(),juce::dontSendNotification);
@@ -778,6 +810,16 @@ void ChoirEditor::setupExtras() {
     harmonyAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"harmony",harmonyBox);
     roomBox.addItemList(juce::StringArray{"Room: studio","Room: hall","Room: cathedral","Room: chamber","Room: plate-style","Room: tunnel-style"},1);
     roomAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"roomType",roomBox);
+    addAndMakeVisible(placeBox);placeBox.setComponentID("place-preset");
+    placeBox.setTextWhenNothingSelected("Choose algorithmic place preset");
+    placeBox.setTooltip("55 original algorithmic designs. Named references are not measured venues or EastWest impulse responses. (edited) means controls differ from the chosen profile.");
+    juce::String previousCategory;
+    for(size_t i=0;i<ir::spacePresets.size();++i) {
+        const auto& preset=ir::spacePresets[i];
+        if(previousCategory!=preset.category) {placeBox.addSectionHeading(preset.category);previousCategory=preset.category;}
+        placeBox.addItem(preset.name,static_cast<int>(i)+1);
+    }
+    placeBox.onChange=[this]{if(placeBox.getSelectedId()>0)processor.applySpacePreset(static_cast<size_t>(placeBox.getSelectedId()-1));};
     characterBox.addItemList(juce::StringArray{"Color: warm","Color: airy","Color: dark","Color: bright"},1);
     const char* humanIds[]={"timing","drift","vibrato","intensity","space","timbre"};
     const char* humanNames[]={"TIMING LOOSENESS","PITCH DRIFT (cents)","VIBRATO (cents)","INTENSITY","SPACE","SYNTHETIC CHARACTER"};

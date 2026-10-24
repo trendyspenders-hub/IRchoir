@@ -17,9 +17,9 @@ jobs:
         run: |
           mount="$RUNNER_TEMP/irchoir-install-check"
           mkdir -p "$mount"
-          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$PWD/dist/I.R.Choir-0.3.0-unsigned.dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$PWD/dist/I.R.Choir-0.3.1-unsigned.dmg"
           trap 'hdiutil detach "$mount"' EXIT
-          sudo installer -pkg "$mount/I.R.Choir-0.3.0-unsigned.pkg" -target / > build/install.log 2>&1
+          sudo installer -pkg "$mount/I.R.Choir-0.3.1-unsigned.pkg" -target / > build/install.log 2>&1
           for bundle in '/Library/Audio/Plug-Ins/Components/IRChoir.component' '/Library/Audio/Plug-Ins/VST3/IRChoir.vst3'; do
             test -d "$bundle"
             codesign --verify --strict "$bundle"

@@ -1,6 +1,7 @@
 #include "../Source/Plugin.cpp"
 #include <iostream>
 #include <stdexcept>
+#include <set>
 static void require(bool ok,const char* message) {if(!ok)throw std::runtime_error(message);}
 static void param(IRChoir& p,const char* id,float v) {auto* a=p.state.getParameter(id);require(a!=nullptr,"Missing parameter");a->setValueNotifyingHost(a->convertTo0to1(v));}
 static void findComponents(juce::Component& c,std::vector<juce::ComboBox*>& boxes,std::vector<juce::TextButton*>& buttons) {
@@ -122,6 +123,32 @@ int main() {
             auto xml=juce::AudioProcessor::getXmlFromBinary(saved.getData(),static_cast<int>(saved.getSize()));
             require(xml && xml->getStringAttribute("vocalFilePath")==file.getFullPathName(),"Project did not remember file reference");
         }
+        // Each named design changes only the reverb and survives undo/state recall.
+        {
+            IRChoir spaces;param(spaces,"voices",2);param(spaces,"low",3);param(spaces,"delay",0.1f);
+            spaces.prepareToPlay(48000,128);
+            juce::MidiBuffer midi;juce::AudioBuffer<float> audio(2,128);
+            std::set<juce::String> names;
+            for(size_t i=0;i<ir::spacePresets.size();++i) {
+                const auto& preset=ir::spacePresets[i];require(names.insert(preset.name).second,"Duplicate place name");
+                spaces.applySpacePreset(i);
+                require(spaces.state.state.getProperty("spacePresetName").toString()==preset.name,"Place label not saved");
+                require(std::abs(spaces.state.getRawParameterValue("revPredelay")->load()-preset.predelay)<0.001f,"Place controls not applied");
+                require(std::abs(spaces.state.getRawParameterValue("low")->load()-3)<0.00001f,"Place preset changed EQ");
+                require(std::abs(spaces.state.getRawParameterValue("delay")->load()-0.1f)<0.00001f,"Place preset changed delay");
+                require(spaces.state.getRawParameterValue("voices")->load()==2,"Place preset changed choir");
+                for(int k=0;k<12;++k){audio.clear();if(k==0){audio.setSample(0,0,0.2f);audio.setSample(1,0,0.1f);}spaces.processBlock(audio,midi);
+                    for(int ch=0;ch<2;++ch)for(int n=0;n<128;++n)require(std::isfinite(audio.getSample(ch,n)),"Place design generated non-finite audio");}
+            }
+            spaces.undoManager.clearUndoHistory();spaces.applySpacePreset(0);spaces.applySpacePreset(1);
+            require(spaces.undoManager.undo(),"Place undo missing");
+            require(spaces.state.state.getProperty("spacePresetName").toString()==ir::spacePresets[0].name,"Place undo did not restore label");
+            require(std::abs(spaces.state.getRawParameterValue("revPredelay")->load()-ir::spacePresets[0].predelay)<0.001f,"Place undo did not restore controls");
+            require(spaces.undoManager.redo(),"Place redo missing");
+            juce::MemoryBlock saved;spaces.getStateInformation(saved);spaces.applySpacePreset(3);
+            spaces.setStateInformation(saved.getData(),static_cast<int>(saved.getSize()));
+            require(spaces.state.state.getProperty("spacePresetName").toString()==ir::spacePresets[1].name,"Place state recall failed");
+        }
         // Instantiate the actual native editor, resize, exercise every factory preset/page/formation/group.
         std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());require(editor!=nullptr,"No editor");
         editor->setSize(1180,960);editor->setSize(1500,1100);editor->setSize(1180,960);
@@ -131,6 +158,9 @@ int main() {
             if(box->getItemText(0)=="Performance controls")for(int id=1;id<=7;++id)box->setSelectedId(id,juce::sendNotificationSync);
             if(box->getItemText(0)=="Formation: semicircle")for(int id=1;id<=3;++id)box->setSelectedId(id,juce::sendNotificationSync);
         }
+        auto* placeBox=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("place-preset"));
+        require(placeBox && placeBox->getNumItems()==55,"Place browser incomplete");
+        for(int id=1;id<=55;++id)placeBox->setSelectedId(id,juce::sendNotificationSync);
         for(auto* button:buttons) {
             auto name=button->getButtonText();
             if(name.contains("group") || name=="All singers" || name=="A" || name=="B" || name=="Copy" || name=="Clear clip light")
@@ -193,6 +223,8 @@ int main() {
         juce::File output=juce::File::getCurrentWorkingDirectory().getChildFile("IRChoir-editor-smoke.png");
         juce::FileOutputStream stream(output);require(stream.openedOk(),"Cannot write editor snapshot");stream.setPosition(0);require(stream.truncate().wasOk(),"Cannot replace old snapshot");require(png.writeImageToStream(image,stream),"Snapshot encoding failed");
         for(auto* box:boxes)if(box->getItemText(0)=="Performance controls")box->setSelectedId(7,juce::sendNotificationSync);
+        placeBox->setSelectedId(11,juce::sendNotificationSync);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(80);
         auto reverbImage=editor->createComponentSnapshot(editor->getLocalBounds());
         juce::FileOutputStream reverbStream(juce::File::getCurrentWorkingDirectory().getChildFile("IRChoir-reverb-smoke.png"));
         reverbStream.setPosition(0);require(reverbStream.truncate().wasOk(),"Reverb snapshot truncate failed");

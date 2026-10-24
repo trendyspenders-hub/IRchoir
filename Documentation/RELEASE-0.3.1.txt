@@ -1,0 +1,10 @@
+I.R.Choir 0.3.1 - Reverb place browser
+
+Adds 55 original algorithmic reference designs in 18 categories. Open Reverb
+space and choose a place from the bottom-left browser. See SPACE-PRESETS.txt
+and SPACE-PRESETS.json for the full catalog and independent design values.
+No measured venue acoustics, third-party IR audio or photographs are included.
+The existing six reverb algorithms remain available on Performance controls.
+The 0.3.0 PDFs describe the core plugin; this addendum covers the new browser.
+Mac build, install and validator results for 0.3.1 are recorded by its workflow.
+The installer remains unsigned and unnotarized.

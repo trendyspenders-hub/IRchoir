@@ -1,0 +1,109 @@
+I.R.Choir - Place Presets
+
+55 original algorithmic designs covering all 55 entries in the public
+Spaces II Locations list, across 18 categories. These are creative reference
+profiles, not measured acoustics, EastWest impulse responses or true-stereo
+recordings. There is no affiliation or endorsement. Their 1,020 individual
+recorded presets are not reproduced. Gated Room is a short-room design;
+it does not add a separate gating processor.
+
+Open Reverb space, then choose a place in its bottom-left browser.
+Each choice updates room type, pre-delay, decay shape, wet width, damping,
+low/high cut frequencies and wet level. It enables reverb and both filters,
+turns mono send/freeze/wet-only off, and leaves the choir, delay, EQ and
+conductor intact. Decay shape is relative, not a measured time in seconds.
+The browser shows (edited) after you change its settings. Sound presets and
+DAW state retain the place label and the actual parameters. Undo/Redo covers
+the whole place selection as one transaction.
+
+Churches
+  Abandoned Abbey
+  Angels Cathedral
+  Berlin Church
+  Grace Church
+  Hamburg Cathedral
+  LA Cathedral
+  LA Church
+  NY Church
+  Sacred Heart
+  Santa Barbara Temple
+  St. Dominic
+  St. Patricks
+
+Concert Halls
+  Abravanel Hall
+  Ace Hall
+  Davies Hall
+  Dortmund Concert Hall
+  LA Guitar Venue
+  LA Piano Hall
+  Northwest Orchestral Hall
+  NY Piano Hall
+  NY String Hall
+  Pasadena Taiko Hall
+  Reynolds Hall
+  San Francisco Hall
+  So. Cal. Orchestral Hall
+
+Courtyard
+  Malibu Stone Courtyard
+
+Caves
+  Carlsbad Caverns
+
+Digital
+  Classic Digital
+  Digital Hollywood Hall
+  Gated Room Reverb
+  Planetary Manifestations
+  Vocal Digital
+
+Forests
+  Hamburg Forest
+  Hamburg Lake Forest
+
+Opera House
+  War Memorial Opera House
+
+Parking Garages
+  SM Parking Garage
+  WLA Parking Garage
+
+Plates
+  Classic Rock Plate
+  EW Vintage Plates
+
+Rock Rooms
+  LA Big Drum Rooms
+  LA Small Drum Rooms
+  LA Studio Drum Rooms
+
+Solo Vocal
+  Solo Vocal
+
+Stages
+  LA Scoring Stages
+
+Studios
+  EastWest Studios
+
+Swimming Hall
+  Berlin Swimming Hall
+
+Tanks
+  SM Concrete Tank
+  SM Water Tank
+
+The Catacombs
+  The Catacombs
+
+Train Stations
+  Long Tunnel
+  Union Station
+
+Warehouses
+  544 Mateo
+  ACME Storage
+  Compton Warehouse
+  WLA Loading Dock
+
