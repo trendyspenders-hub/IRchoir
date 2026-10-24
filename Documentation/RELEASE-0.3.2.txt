@@ -15,6 +15,6 @@ UBSan (leak detection disabled), final document generation and final DMG
 reinstallation/validation. Consult the current report and evidence for the
 run result. Installer uploads are gated on success.
 
-Manual playback, synthetic pitch/voice colors, six algorithmic reverb engines,
+Manual playback, synthetic pitch/voice colors, six base algorithmic reverb profiles,
 no trained singers, no formant lock, no host sync, no LUFS or true-peak limiter.
 Developer ID signing, notarization and real-DAW listening remain separate.

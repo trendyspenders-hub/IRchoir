@@ -13,8 +13,8 @@
 | MIDI harmonies | Experimental monophonic pitch detection plus four MIDI note targets |
 | Soprano/alto/tenor/bass parts | Four labeled pitch-shifted parts with separate level and interval; not sampled SATB voices |
 | Distinct singer identities | Four synthetic tonal colors per layer; actual new human/AI identities are NOT implemented |
-| AI choir conversion and words | NOT implemented; needs a separately licensed/trained engine and recordings |
-| Mac DMG containing AU + VST3 installer | Build scripts and CI provided; actual Mac execution required |
+| AI conversion / new words | Not implemented. Imported recorded words are carried through the processed choir layers; new lyrics are not synthesized. |
+| Mac DMG containing AU + VST3 installer | PASS - universal build, DMG creation/mount, package install and installed AU/VST3 validators |
 | Signed/notarized public installer | Optional local script support; requires user's Apple certificates and profile |
 
 No placeholder text-to-singing or AI-model controls are presented as functioning
@@ -29,3 +29,11 @@ Detailed vector singers include varied faces, skin tones, hairstyles, robes and 
 Reverb space page: six algorithmic settings, pre-delay, decay shape, width, damping, low/high send-filter toggles and frequencies, mono send, freeze, wet-only and bypass. Automated checks cover dry bypass, delayed wet onset, all 192 room/toggle combinations, and state recall.
 
 Direct vocal import: local WAV/AIFF/FLAC, background decode, Play/Stop/Loop, file/DAW source switch, sample-rate conversion and project file references. The source performance supplies lyrics to all choir layers; there is no transcription, voice-cloning model or new-lyric generation. Playback is manually controlled and recordings are not embedded in presets.
+
+Current 0.3.2 coverage and run results are recorded in AUDIT.md and the Release
+and Test Report PDF. Actual Intel runtime, real DAW sessions, listening, Developer
+ID signing and notarization remain outside automated acceptance.
+
+0.3.2 Reverb display: original category-driven room illustration, choir placement
+and control-linked relative decay graph; no photographs or measured IR display.
+55 original place profiles across 18 categories are available in the browser.
