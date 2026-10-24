@@ -21,7 +21,9 @@ certificate for an arbitrary local rebuild.
 
 A sanitizer finding in JUCE 8.0.6 bundled libFLAC encoder test setup was recorded.
 The plugin imports but does not export FLAC. Tests now use an original fixed
-synthetic FLAC fixture; its decoding remains fully instrumented. No sanitizer
+synthetic FLAC fixture; its decoding remains fully instrumented. A separate decoder finding (left shift of negative PCM) is corrected by
+cmake/PatchJuceFlac.cmake using defined int64 sample scaling. The corresponding
+JUCE source archive includes that marked modification. No sanitizer
 suppression was added. WAV/AIFF generation remains exercised in test setup.
 
 ## Limits and remaining acceptance work
