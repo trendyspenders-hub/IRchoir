@@ -1,0 +1,35 @@
+I.R.CHOIR 0.3.2 - WINDOWS x64 VST3
+
+Quit your DAW. Run IRChoir-0.3.2-Windows-x64-Setup-unsigned.exe and approve
+the installation prompt. Restart your 64-bit VST3-compatible DAW and rescan.
+The installer is unsigned; verify its source and checksum before running it.
+Do not disable Windows security globally.
+
+Plugin: C:\Program Files\Common Files\VST3\IRChoir.vst3
+Instructions, license and source: C:\Program Files\IR Audio\I.R.Choir
+Target: Windows 10/11 x64. Windows ARM native and 32-bit builds are not supplied.
+AU is a Mac format. This release does not include a Pro Tools/AAX installer.
+The MSVC runtime is statically linked; no separate VC++ runtime installer is bundled.
+
+START
+Insert I.R.Choir on an audio track. Use track audio, or Load vocal and press
+Play with File input enabled. WAV/AIFF/FLAC mono/stereo, 8-192 kHz, five minutes
+maximum and 128 MiB decoded. File playback is manual, not DAW synchronized.
+Start with Unison and Intimate/Wide, then adjust mix, width, motion and room.
+Reverb space contains 55 original algorithmic place profiles; these are not
+measured venue impulse responses. The visual room is an original illustration.
+
+TESTING
+The Windows release workflow builds the native x64 VST3, runs DSP/editor/import
+regressions, installs this EXE, validates the installed VST3 with pluginval 1.0.4
+strictness 10, reinstalls it, uninstalls it and checks preset preservation.
+Consult the included evidence and BUILD-STATUS.json for the actual run result.
+Automated checks do not establish compatibility with every DAW or real-vocal
+sound quality. Test a copy of a session before important work.
+
+REMOVE
+Quit your DAW and uninstall I.R.Choir VST3 in Windows Settings > Apps.
+Your presets and original audio are stored separately and are preserved.
+Keep the original imported recording files; sessions reference their paths.
+
+Source and JUCE 8.0.6 source archives/licenses are installed alongside this guide.

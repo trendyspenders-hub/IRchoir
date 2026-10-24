@@ -1,0 +1,90 @@
+name: Build and audit Windows VST3 installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, windows-installer-032]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native Windows x64 VST3 and tests
+        run: |
+          cmake -S . -B build-windows -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DIRCHOIR_BUILD_TESTS=ON -DIRCHOIR_BUILD_AAX=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
+          cmake --build build-windows --config Release --parallel 3
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          ctest --test-dir build-windows -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Native tests failed' }
+      - name: Package source and build installer
+        run: |
+          New-Item -ItemType Directory -Force windows-source,dist-windows | Out-Null
+          git archive --format=zip --output=windows-source/IRChoir-source.zip HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Source archive failed' }
+          tar --exclude=.git -czf windows-source/JUCE-8.0.6-source.tar.gz -C build-windows/_deps/juce-src .
+          if ($LASTEXITCODE -ne 0) { throw 'JUCE source archive failed' }
+          Copy-Item build-windows/_deps/juce-src/LICENSE.md windows-source/JUCE-LICENSE.md
+          $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (!(Test-Path $compiler)) { throw 'Inno Setup 6 missing from runner' }
+          & $compiler InstallerResources/Windows/IRChoir.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          Compress-Archive -Path build-windows/IRChoir_artefacts/Release/VST3/IRChoir.vst3 -DestinationPath dist-windows/IRChoir-0.3.2-Windows-x64-VST3.zip
+          Copy-Item Documentation/WINDOWS-INSTALL.txt dist-windows/READ-ME-FIRST.txt
+      - name: Install and validate the installed VST3
+        run: |
+          $setup = Resolve-Path dist-windows/IRChoir-0.3.2-Windows-x64-Setup-unsigned.exe
+          $install = Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=$PWD\build-windows\install.log" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Install failed: $($install.ExitCode)" }
+          $plugin = "$env:CommonProgramFiles\VST3\IRChoir.vst3"
+          $built = 'build-windows/IRChoir_artefacts/Release/VST3/IRChoir.vst3/Contents/x86_64-win/IRChoir.vst3'
+          $installed = Join-Path $plugin 'Contents/x86_64-win/IRChoir.vst3'
+          if (!(Test-Path $installed)) { throw 'Installed VST3 is missing' }
+          if ((Get-FileHash $built).Hash -ne (Get-FileHash $installed).Hash) { throw 'Installed binary differs' }
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip -OutFile "$env:RUNNER_TEMP/pluginval.zip"
+          Expand-Archive "$env:RUNNER_TEMP/pluginval.zip" "$env:RUNNER_TEMP/pluginval"
+          $validator = Get-ChildItem "$env:RUNNER_TEMP/pluginval" -Filter pluginval.exe -Recurse | Select-Object -First 1
+          if (!$validator) { throw 'pluginval executable missing' }
+          & $validator.FullName --strictness-level 10 --random-seed 12345 --validate $plugin *> build-windows/pluginval.log
+          if ($LASTEXITCODE -ne 0) { throw 'Installed pluginval failed' }
+      - name: Reinstall and uninstall, preserving user data
+        run: |
+          $presetDir = Join-Path $env:APPDATA 'IRChoir/Presets'
+          New-Item -ItemType Directory -Force $presetDir | Out-Null
+          $sentinel = Join-Path $presetDir 'installer-preservation-check.txt'
+          Set-Content $sentinel 'Preserve user-created presets'
+          $before = (Get-FileHash $sentinel).Hash
+          $setup = Resolve-Path dist-windows/IRChoir-0.3.2-Windows-x64-Setup-unsigned.exe
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Reinstall failed' }
+          $uninstaller = "$env:ProgramFiles\IR Audio\I.R.Choir\unins000.exe"
+          $p = Start-Process $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=$PWD\build-windows\uninstall.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
+          if (Test-Path "$env:CommonProgramFiles\VST3\IRChoir.vst3\Contents\x86_64-win\IRChoir.vst3") { throw 'Plugin binary survived uninstall' }
+          if (!(Test-Path $sentinel) -or (Get-FileHash $sentinel).Hash -ne $before) { throw 'User data was changed' }
+          Remove-Item $sentinel
+          @{ version='0.3.2'; platform='Windows x64'; commit=$env:GITHUB_SHA; run=$env:GITHUB_RUN_ID; build='PASS'; native_tests='PASS'; installed_pluginval_strictness_10='PASS'; reinstall='PASS'; uninstall_and_user_data_preservation='PASS'; signing='Unsigned'; actual_DAW_sessions='Not tested' } | ConvertTo-Json | Set-Content dist-windows/BUILD-STATUS.json
+          Get-ChildItem dist-windows -File | Where-Object Name -ne SHA256SUMS.txt | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(),$_.Name } | Set-Content dist-windows/SHA256SUMS.txt
+      - name: Save Windows test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: I.R.Choir-Windows-Test-Evidence
+          path: |
+            build-windows/Testing/Temporary/LastTest.log
+            build-windows/IRChoir-editor-smoke.png
+            build-windows/IRChoir-reverb-smoke.png
+            build-windows/install.log
+            build-windows/uninstall.log
+            build-windows/pluginval.log
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: I.R.Choir-Windows-x64-Installer
+          path: dist-windows/
+          if-no-files-found: error
