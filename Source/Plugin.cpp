@@ -750,7 +750,9 @@ private:
     float value(const juce::String& id) const { return processor.state.getRawParameterValue(id)->load(); }
     void setRaw(const juce::String& id,float v) {
         auto* p=processor.state.getParameter(id);
-        processor.state.getParameterAsValue(id).setValue(p->getNormalisableRange().snapToLegalValue(v));
+        auto parameterValue=processor.state.getParameterAsValue(id);
+        if(std::abs(static_cast<float>(parameterValue.getValue())-value(id))>0.000001f)processor.state.copyState();
+        parameterValue.setValue(p->getNormalisableRange().snapToLegalValue(v));
     }
     void set(const juce::String& id,float v) { auto* p=processor.state.getParameter(id); p->beginChangeGesture(); setRaw(id,v); p->endChangeGesture(); }
     juce::Rectangle<float> stage() const { return {45.f,190.f,static_cast<float>(getWidth()-340),static_cast<float>(getHeight()-590)}; }
@@ -929,16 +931,16 @@ void ChoirEditor::setupExtras() {
     for(int j=0;j<4;++j) {addExtra("partLevel"+juce::String(j),juce::String(partNames[j])+" LEVEL",5,j);addExtra("interval"+juce::String(j),juce::String(partNames[j])+" SEMITONES",6,j);}
     for(auto* c:{&groupPan,&groupLevel}) {addAndMakeVisible(*c);c->setSliderStyle(juce::Slider::LinearHorizontal);c->setTextBoxStyle(juce::Slider::TextBoxRight,false,60,24);}
     groupPan.setRange(-1,1,0.01);groupPan.setValue(0,juce::dontSendNotification);groupPan.setTitle("Group pan offset");
-    groupPan.onDragStart=[this]{processor.undoManager.beginNewTransaction("Group pan");lastGroupPan=0;};
+    groupPan.onDragStart=[this]{processor.state.copyState();processor.undoManager.beginNewTransaction("Group pan");lastGroupPan=0;};
     groupPan.onValueChange=[this]{float now=static_cast<float>(groupPan.getValue());groupAdjust("pan",now-lastGroupPan,true);lastGroupPan=now;};
     groupPan.onDragEnd=[this]{groupPan.setValue(0,juce::dontSendNotification);lastGroupPan=0;};
     groupLevel.setRange(0,1,0.01);groupLevel.setValue(0.8,juce::dontSendNotification);groupLevel.setTitle("Selected group level");
-    groupLevel.onDragStart=[this]{processor.undoManager.beginNewTransaction("Group level");};
+    groupLevel.onDragStart=[this]{processor.state.copyState();processor.undoManager.beginNewTransaction("Group level");};
     groupLevel.onValueChange=[this]{groupAdjust("level",static_cast<float>(groupLevel.getValue()),false);};
     for(auto* c:{&groupMute,&groupSolo,&savePreset,&favourite,&favOnly,&ab,&copyAB,&monoButton,&clearClip})addAndMakeVisible(*c);
     groupMute.setButtonText("Toggle group mute");groupSolo.setButtonText("Toggle group solo");
-    groupMute.onClick=[this]{processor.undoManager.beginNewTransaction("Group mute");groupAdjust("mute",value("mute"+juce::String(selected))>0.5f?0.f:1.f,false);};
-    groupSolo.onClick=[this]{processor.undoManager.beginNewTransaction("Group solo");groupAdjust("solo",value("solo"+juce::String(selected))>0.5f?0.f:1.f,false);};
+    groupMute.onClick=[this]{processor.state.copyState();processor.undoManager.beginNewTransaction("Group mute");groupAdjust("mute",value("mute"+juce::String(selected))>0.5f?0.f:1.f,false);};
+    groupSolo.onClick=[this]{processor.state.copyState();processor.undoManager.beginNewTransaction("Group solo");groupAdjust("solo",value("solo"+juce::String(selected))>0.5f?0.f:1.f,false);};
     monoButton.setButtonText("Mono audition");monoButton.setClickingTogglesState(true);
     monoAttachment=std::make_unique<ButtonAttachment>(processor.state,"mono",monoButton);
     clearClip.setButtonText("Clear clip light");clearClip.onClick=[this]{processor.clipped.store(false);};
@@ -1025,7 +1027,7 @@ void ChoirEditor::groupAdjust(const char* prefix,float amount,bool relative) {
     }
 }
 void ChoirEditor::applyFormation(int shape) {
-    endDrag();set("formation",static_cast<float>(shape-1));
+    endDrag();processor.state.copyState();processor.undoManager.beginNewTransaction("Choir formation");set("formation",static_cast<float>(shape-1));
     const int n=static_cast<int>(value("voices"));
     for(int i=0;i<32;++i) {
         int count=std::max(1,(n+3-(i%4))/4);int index=i/4;

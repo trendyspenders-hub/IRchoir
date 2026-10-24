@@ -269,6 +269,15 @@ int main() {
             for(auto* box:boxes)if(box->indexOfItemId(1000)>=0)for(int i=0;i<box->getNumItems();++i)if(box->getItemText(i).contains("invalid")){box->setSelectedId(box->getItemId(i),juce::sendNotificationSync);selected=true;}
             require(selected && p.state.getRawParameterValue("low")->load()==before,"Malformed custom preset changed sound state");
         }
+        {
+            juce::TextButton *all=nullptr,*groupMute=nullptr;
+            for(auto* button:buttons){if(button->getButtonText()=="All singers")all=button;if(button->getButtonText()=="Toggle group mute")groupMute=button;}
+            require(all && groupMute,"Group controls missing");all->onClick();
+            param(p,"mute0",1);groupMute->onClick();
+            require(p.state.getRawParameterValue("mute0")->load()==0,"Pending host parameter update swallowed group mute");
+            require(p.undoManager.undo() && p.state.getRawParameterValue("mute0")->load()==1,"Group undo did not retain the latest parameter state");
+            p.undoManager.redo();
+        }
         // Exercise the real conductor drag handlers.
         auto event=[&](float x,float y) {auto time=juce::Time::getCurrentTime();return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),{x,y},juce::ModifierKeys::leftButtonModifier,1,0,0,0,0,editor.get(),editor.get(),time,{x,y},time,1,false);};
         editor->mouseDown(event(1000,260));editor->mouseDrag(event(1100,230));editor->mouseUp(event(1100,230));
