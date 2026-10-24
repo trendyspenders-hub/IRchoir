@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-  <title>I.R.Choir 0.3.1</title>
+  <title>I.R.Choir 0.3.2</title>
   <welcome file="Welcome.html" mime-type="text/html"/>
   <readme file="Readme.html" mime-type="text/html"/>
   <license file="LICENSE.txt" mime-type="text/plain"/>
@@ -11,5 +11,5 @@
   <choice id="choir" visible="false" title="I.R.Choir AU and VST3">
     <pkg-ref id="audio.ir.choir.installer"/>
   </choice>
-  <pkg-ref id="audio.ir.choir.installer" version="0.3.1" onConclusion="none">payload.pkg</pkg-ref>
+  <pkg-ref id="audio.ir.choir.installer" version="0.3.2" onConclusion="none">payload.pkg</pkg-ref>
 </installer-gui-script>

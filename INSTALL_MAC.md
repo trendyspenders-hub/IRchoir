@@ -1,9 +1,8 @@
 # Installing I.R.Choir on Mac
 
-No Mac binary is present in the source archive. First run the supplied Mac build
-locally or in GitHub Actions and download its successful DMG artifact.
+The Complete Package includes the validated DMG in its Installer folder. The Mac run built universal AU/VST3, installed the package and passed installed pluginval/auval checks. Use the updated PDFs beside the installer; they supersede older copies embedded in the preserved DMG.
 
-1. Quit your DAW. Open I.R.Choir-0.3.0-unsigned.dmg.
+1. Quit your DAW. Open I.R.Choir-0.3.2-unsigned.dmg.
 2. Read the included audit. Open the .pkg and follow Apple's Installer prompts.
 3. The package installs these compiled plugin bundles:
    /Library/Audio/Plug-Ins/Components/IRChoir.component
@@ -15,7 +14,7 @@ locally or in GitHub Actions and download its successful DMG artifact.
    required; pressing a MIDI key alone does not synthesize a voice.
 
 Target: macOS 12+, Intel and Apple Silicon. Actual Mac compatibility and DAW scans
-must be confirmed after a successful Mac runner build. VST2 and AAX are absent.
+must be confirmed in your own DAW; automated Mac runner checks already passed. VST2 and AAX are absent.
 Unsigned downloads may be blocked by macOS. Use only builds whose origin and
 source you trust; do not disable Gatekeeper globally.
 

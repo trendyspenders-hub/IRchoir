@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ "$(uname -s)" == Darwin ]] || { echo 'Packaging requires macOS.' >&2; exit 1; }
-version=0.3.1
+version=0.3.2
 out="$PWD/dist"
 work="$(mktemp -d "${TMPDIR:-/tmp}/irchoir-package.XXXXXX")"
 trap 'rm -rf "$work"' EXIT

@@ -2,12 +2,21 @@
 #include <iostream>
 #include <stdexcept>
 #include <set>
+#include <limits>
+#include <thread>
+#include <chrono>
 static void require(bool ok,const char* message) {if(!ok)throw std::runtime_error(message);}
 static void param(IRChoir& p,const char* id,float v) {auto* a=p.state.getParameter(id);require(a!=nullptr,"Missing parameter");a->setValueNotifyingHost(a->convertTo0to1(v));}
 static void findComponents(juce::Component& c,std::vector<juce::ComboBox*>& boxes,std::vector<juce::TextButton*>& buttons) {
     if(auto* box=dynamic_cast<juce::ComboBox*>(&c))boxes.push_back(box);
     if(auto* button=dynamic_cast<juce::TextButton*>(&c))buttons.push_back(button);
     for(auto* child:c.getChildren())findComponents(*child,boxes,buttons);
+}
+static void waitForImport(VocalFilePlayer& file) {
+    const auto timeout=juce::Time::getMillisecondCounterHiRes()+5000;
+    do {juce::MessageManager::getInstance()->runDispatchLoopUntil(5);std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+    while(file.loading.load() && juce::Time::getMillisecondCounterHiRes()<timeout);
+    require(!file.loading.load(),"Background import did not complete");
 }
 int main() {
     try {
@@ -48,6 +57,21 @@ int main() {
         require(p.state.getRawParameterValue("character4")->load()==3,"Voice color not recalled");
         const float beforeInvalid=p.state.getRawParameterValue("low")->load();
         const char junk[]="invalid";p.setStateInformation(junk,7);require(p.state.getRawParameterValue("low")->load()==beforeInvalid,"Invalid state damaged processor");
+        {
+            auto corrupt=p.state.copyState();
+            for(auto child:corrupt)if(child.getProperty("id").toString()=="low")child.setProperty("value","nan",nullptr);
+            auto xml=corrupt.createXml();juce::MemoryBlock data;juce::AudioProcessor::copyXmlToBinary(*xml,data);
+            const float before=p.state.getRawParameterValue("low")->load();p.setStateInformation(data.getData(),static_cast<int>(data.getSize()));
+            require(p.state.getRawParameterValue("low")->load()==before,"Non-finite state was not rejected");
+            IRChoir robust;param(robust,"mix",0);param(robust,"room",0);param(robust,"gain",0);robust.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> audio(2,128);audio.clear();juce::MidiBuffer midi;
+            audio.setSample(0,0,std::numeric_limits<float>::quiet_NaN());audio.setSample(1,0,std::numeric_limits<float>::infinity());
+            audio.setSample(0,1,std::numeric_limits<float>::max());audio.setSample(1,1,std::numeric_limits<float>::max());robust.processBlock(audio,midi);
+            for(int c=0;c<2;++c)for(int n=0;n<128;++n)require(std::isfinite(audio.getSample(c,n)),"Non-finite input escaped sanitization");
+            audio.clear();audio.setSample(0,100,0.2f);audio.setSample(1,100,0.2f);robust.processBlock(audio,midi);
+            require(std::abs(audio.getSample(0,100)-0.2f)<0.00001f,"Malformed input poisoned subsequent audio");
+            robust.reset();require(robust.outputL.load()==0 && robust.detectedHz.load()==0 && robust.monoRms.load()==0 && robust.correlation.load()==1,"Reset left stale meters");
+        }
         // Master rack extremes, block silence, mono and sanitization.
         for(const char* id:{"low","high","compression","drive","delay","feedback","room","gain"}) {
             auto* a=p.state.getParameter(id);a->setValueNotifyingHost(1.f);
@@ -87,6 +111,14 @@ int main() {
             r.setStateInformation(state.getData(),static_cast<int>(state.getSize()));
             require(r.state.getRawParameterValue("reverbFreeze")->load()==1,"Reverb state not recalled");
         }
+        {
+            IRChoir held;param(held,"mix",0);param(held,"room",1);param(held,"reverbWetOnly",1);param(held,"revPredelay",0);held.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> audio(2,128);juce::MidiBuffer midi;
+            for(int k=0;k<60;++k){audio.clear();if(k==0){audio.setSample(0,0,0.7f);audio.setSample(1,0,0.5f);}held.processBlock(audio,midi);}
+            param(held,"reverbFreeze",1);float frozenPeak=0;
+            for(int k=0;k<750;++k){audio.clear();held.processBlock(audio,midi);if(k>600)frozenPeak=std::max(frozenPeak,audio.getMagnitude(0,128));}
+            require(frozenPeak>0.000001f,"Freeze did not sustain the reverb tail");
+        }
         // Direct file import: decode a real WAV and pass it through the processor.
         {
             irTestRoot.createDirectory();auto file=irTestRoot.getChildFile("Test vocal.wav");
@@ -96,6 +128,28 @@ int main() {
             juce::AudioBuffer<float> source(1,4410);
             for(int n=0;n<4410;++n)source.setSample(0,n,0.2f*std::sin(static_cast<float>(2*ir::pi*220*n/44100.)));
             require(writer->writeFromAudioSampleBuffer(source,0,4410),"Cannot write import WAV");writer.reset();
+            VocalFilePlayer emptyPlayer;
+            require(!emptyPlayer.togglePlayback() && !emptyPlayer.playing.load() && !emptyPlayer.enabled.load(),"Empty player entered playback");
+            for(int format=0;format<2;++format) {
+                auto encoded=irTestRoot.getChildFile(format==0?"Test vocal.aiff":"Test vocal.flac");
+                std::unique_ptr<juce::AudioFormat> encoder=format==0?std::unique_ptr<juce::AudioFormat>(new juce::AiffAudioFormat):std::unique_ptr<juce::AudioFormat>(new juce::FlacAudioFormat);
+                std::unique_ptr<juce::AudioFormatWriter> encode(encoder->createWriterFor(encoded.createOutputStream().release(),44100,1,16,{},0));
+                require(encode && encode->writeFromAudioSampleBuffer(source,0,source.getNumSamples()),"Cannot create AIFF/FLAC fixture");encode.reset();
+                VocalFilePlayer decoder;require(decoder.loadForTest(encoded),"Advertised AIFF/FLAC import failed");
+            }
+            {
+                auto surround=irTestRoot.getChildFile("unsupported-surround.wav");
+                std::unique_ptr<juce::AudioFormatWriter> encode(wav.createWriterFor(surround.createOutputStream().release(),44100,3,16,{},0));
+                juce::AudioBuffer<float> three(3,128);three.clear();require(encode && encode->writeFromAudioSampleBuffer(three,0,128),"Cannot write surround fixture");encode.reset();
+                VocalFilePlayer decoder;require(!decoder.loadForTest(surround),"Unsupported multichannel file accepted");
+                auto broken=irTestRoot.getChildFile("broken.wav");broken.replaceWithText("Not an audio recording");require(!decoder.loadForTest(broken),"Corrupt file accepted");
+                auto stereoFile=irTestRoot.getChildFile("stereo.wav");
+                std::unique_ptr<juce::AudioFormatWriter> stereoWriter(wav.createWriterFor(stereoFile.createOutputStream().release(),44100,2,16,{},0));
+                juce::AudioBuffer<float> stereoSource(2,4410);for(int n=0;n<4410;++n){stereoSource.setSample(0,n,0.1f);stereoSource.setSample(1,n,-0.2f);}
+                require(stereoWriter && stereoWriter->writeFromAudioSampleBuffer(stereoSource,0,4410),"Cannot write stereo fixture");stereoWriter.reset();
+                require(decoder.loadForTest(stereoFile) && decoder.togglePlayback(),"Stereo import failed");juce::AudioBuffer<float> stereoOutput(2,512);decoder.render(stereoOutput,44100);
+                require(stereoOutput.getSample(0,400)>0.09f && stereoOutput.getSample(1,400)<-0.19f,"Imported stereo channels were not preserved");
+            }
             IRChoir fileProcessor;param(fileProcessor,"mix",0);param(fileProcessor,"room",0);param(fileProcessor,"gain",0);
             require(fileProcessor.vocalFile.loadForTest(file),"WAV import failed");
             require(!fileProcessor.vocalFile.playing.load(),"Import auto-played");
@@ -122,6 +176,23 @@ int main() {
             juce::MemoryBlock saved;fileProcessor.getStateInformation(saved);
             auto xml=juce::AudioProcessor::getXmlFromBinary(saved.getData(),static_cast<int>(saved.getSize()));
             require(xml && xml->getStringAttribute("vocalFilePath")==file.getFullPathName(),"Project did not remember file reference");
+            // Restore real project state through its background path, not a test shortcut.
+            fileProcessor.setStateInformation(saved.getData(),static_cast<int>(saved.getSize()));waitForImport(fileProcessor.vocalFile);
+            require(fileProcessor.vocalFile.isReady() && !fileProcessor.vocalFile.playing.load() && !fileProcessor.vocalFile.enabled.load(),"File restore changed source/play state");
+            auto missing=juce::XmlDocument::parse(xml->toString());missing->setAttribute("vocalFilePath",irTestRoot.getChildFile("no-such-vocal.wav").getFullPathName());missing->setAttribute("vocalFileEnabled",true);
+            juce::MemoryBlock absent;juce::AudioProcessor::copyXmlToBinary(*missing,absent);
+            fileProcessor.setStateInformation(absent.getData(),static_cast<int>(absent.getSize()));waitForImport(fileProcessor.vocalFile);
+            require(!fileProcessor.vocalFile.isReady() && !fileProcessor.vocalFile.togglePlayback(),"Missing project file exposed an old vocal");
+            require(fileProcessor.vocalFile.path().endsWith("no-such-vocal.wav"),"Missing reference was not retained for relinking");
+            auto clear=juce::XmlDocument::parse(xml->toString());clear->setAttribute("vocalFilePath","");clear->setAttribute("vocalFileEnabled",false);
+            juce::MemoryBlock cleared;juce::AudioProcessor::copyXmlToBinary(*clear,cleared);
+            fileProcessor.setStateInformation(cleared.getData(),static_cast<int>(cleared.getSize()));waitForImport(fileProcessor.vocalFile);
+            require(!fileProcessor.vocalFile.isReady() && fileProcessor.vocalFile.path().isEmpty(),"Empty project reference retained an old vocal");
+            fileProcessor.vocalFile.loadFile(file,true);fileProcessor.vocalFile.loadFile(juce::File{},false,true);waitForImport(fileProcessor.vocalFile);
+            require(!fileProcessor.vocalFile.isReady(),"A stale background import replaced the newer clear request");
+            fileProcessor.vocalFile.loadFile(file,true);waitForImport(fileProcessor.vocalFile);
+            require(fileProcessor.vocalFile.isReady() && fileProcessor.vocalFile.togglePlayback(),"Relinking after a missing file failed");
+            fileProcessor.vocalFile.stop();
         }
         // Each named design changes only the reverb and survives undo/state recall.
         {
@@ -166,6 +237,11 @@ int main() {
             if(name.contains("group") || name=="All singers" || name=="A" || name=="B" || name=="Copy" || name=="Clear clip light")
                 if(button->onClick)button->onClick();
         }
+        p.undoManager.clearUndoHistory();param(p,"low",7);param(p,"drive",0.23f);
+        for(auto* box:boxes)if(box->getNumItems()==9)box->setSelectedId(5,juce::sendNotificationSync);
+        require(std::abs(p.state.getRawParameterValue("low")->load())<0.00001f,"Factory reset did not reset EQ");
+        require(p.undoManager.undo(),"Factory undo missing");
+        require(std::abs(p.state.getRawParameterValue("low")->load()-7)<0.00001f && std::abs(p.state.getRawParameterValue("drive")->load()-0.23f)<0.00001f,"Factory undo did not restore default-reset parameters");
         // Custom presets, favourites and A/B use an isolated temporary folder.
         juce::TextButton *save=nullptr,*star=nullptr,*filter=nullptr,*abButton=nullptr;
         for(auto* button:buttons) {
@@ -225,6 +301,10 @@ int main() {
         for(auto* box:boxes)if(box->getItemText(0)=="Performance controls")box->setSelectedId(7,juce::sendNotificationSync);
         placeBox->setSelectedId(11,juce::sendNotificationSync);
         juce::MessageManager::getInstance()->runDispatchLoopUntil(80);
+        auto* inspector=editor->findChildWithID("singer-inspector");require(inspector && !inspector->isVisible(),"Choir inspector overlaps the reverb illustration");
+        float beforePan=p.state.getRawParameterValue("pan0")->load(),beforeMute=p.state.getRawParameterValue("mute0")->load();
+        editor->mouseDown(event(100,240));editor->mouseDrag(event(150,220));editor->mouseUp(event(150,220));editor->mouseDoubleClick(event(100,240));
+        require(p.state.getRawParameterValue("pan0")->load()==beforePan && p.state.getRawParameterValue("mute0")->load()==beforeMute,"Reverb illustration activated a hidden singer control");
         auto reverbImage=editor->createComponentSnapshot(editor->getLocalBounds());
         juce::FileOutputStream reverbStream(juce::File::getCurrentWorkingDirectory().getChildFile("IRChoir-reverb-smoke.png"));
         reverbStream.setPosition(0);require(reverbStream.truncate().wasOk(),"Reverb snapshot truncate failed");

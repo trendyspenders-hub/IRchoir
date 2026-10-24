@@ -1,0 +1,20 @@
+I.R.Choir 0.3.2 - functional audit and visual Reverb display
+
+Includes all 55 original algorithmic place designs, a category-driven room
+illustration and a control-linked relative decay plot. These are not venue
+photos or measured impulse responses. Singer editing stays on choir pages.
+
+Fixes missing/empty project audio recall, stale worker publication, empty
+player state, factory-preset undo, preset identity recall, non-finite state
+validation, extreme input sanitization and stale reset meters. Global audio
+parameter pointers are cached to avoid repeated string construction.
+
+The release workflow enforces universal build, expanded native tests,
+installed pluginval 1.0.4 strictness 10, auval, full processor/editor ASan and
+UBSan (leak detection disabled), final document generation and final DMG
+reinstallation/validation. Consult the current report and evidence for the
+run result. Installer uploads are gated on success.
+
+Manual playback, synthetic pitch/voice colors, six algorithmic reverb engines,
+no trained singers, no formant lock, no host sync, no LUFS or true-peak limiter.
+Developer ID signing, notarization and real-DAW listening remain separate.

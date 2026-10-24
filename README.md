@@ -1,7 +1,6 @@
-# I.R.Choir 0.3.0 — native vocal ensemble prototype
+# I.R.Choir 0.3.2 — native vocal ensemble prototype
 
-This archive contains source, tests and a Mac DMG build pipeline. It is not a
-Mac installer. See AUDIT.md for what actually ran and the remaining release gates.
+This repository contains the native vocal ensemble plugin, source, tests, branded documentation and Mac installer pipeline. Successful GitHub Actions runs publish the universal AU/VST3 DMG and current manuals. The 0.3.2 audit fixes file recall, empty-player state, factory undo, preset identity, numeric state validation and stale reset meters. The Reverb page now has an original illustrated space and relative decay plot.
 
 ## Added features
 - Native animated choir stage with 2–32 audio-reactive singer icons.

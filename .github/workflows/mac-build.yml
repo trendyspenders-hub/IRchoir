@@ -11,28 +11,61 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare pinned documentation dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/irchoir-docs"
+          "$RUNNER_TEMP/irchoir-docs/bin/pip" install -r Documentation/requirements-docs.txt
       - name: Build universal plugins, run smoke tests and create DMG
+        env:
+          IRCHOIR_DOC_PYTHON: ${{ runner.temp }}/irchoir-docs/bin/python
         run: bash Scripts/build-mac.sh
       - name: Mount DMG and install the package on the isolated runner
         run: |
           mount="$RUNNER_TEMP/irchoir-install-check"
           mkdir -p "$mount"
-          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$PWD/dist/I.R.Choir-0.3.1-unsigned.dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$PWD/dist/I.R.Choir-0.3.2-unsigned.dmg"
           trap 'hdiutil detach "$mount"' EXIT
-          sudo installer -pkg "$mount/I.R.Choir-0.3.1-unsigned.pkg" -target / > build/install.log 2>&1
+          sudo installer -pkg "$mount/I.R.Choir-0.3.2-unsigned.pkg" -target / > build/install.log 2>&1
           for bundle in '/Library/Audio/Plug-Ins/Components/IRChoir.component' '/Library/Audio/Plug-Ins/VST3/IRChoir.vst3'; do
             test -d "$bundle"
             codesign --verify --strict "$bundle"
             xcrun lipo "$bundle/Contents/MacOS/IRChoir" -verify_arch arm64 x86_64
           done
-      - name: Validate VST3 with pluginval 1.0.4
+      - name: Validate installed VST3 with pluginval 1.0.4 at level 10
         run: |
           curl --fail --location --retry 2 https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip -o "$RUNNER_TEMP/pluginval.zip"
           unzip -q "$RUNNER_TEMP/pluginval.zip" -d "$RUNNER_TEMP/pluginval"
-          "$RUNNER_TEMP/pluginval/pluginval.app/Contents/MacOS/pluginval" --strictness-level 5 --random-seed 12345 --validate "/Library/Audio/Plug-Ins/VST3/IRChoir.vst3" > build/pluginval.log 2>&1
+          "$RUNNER_TEMP/pluginval/pluginval.app/Contents/MacOS/pluginval" --strictness-level 10 --random-seed 12345 --validate "/Library/Audio/Plug-Ins/VST3/IRChoir.vst3" > build/pluginval.log 2>&1
       - name: Validate installed AU on the isolated Mac runner
         run: |
           auval -v aumf IrCh IrAu > build/auval.log 2>&1
+      - name: Audit native processor and editor with ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DIRCHOIR_BUILD_TESTS=ON -DIRCHOIR_SANITIZE_TESTS=ON -DFETCHCONTENT_SOURCE_DIR_JUCE="$PWD/build/_deps/juce-src"
+          cmake --build build-asan --target IRChoirSmoke IRChoirDSPTests --parallel 3 > build/asan-build.log 2>&1
+          ctest --test-dir build-asan -C Release --output-on-failure > build/asan-tests.log 2>&1
+      - name: Refresh validated documents and final DMG
+        env:
+          IRCHOIR_AUDIT_VALIDATED: '1'
+        run: |
+          "$RUNNER_TEMP/irchoir-docs/bin/python" Scripts/make-documents.py
+          bash Scripts/package-mac.sh
+      - name: Verify final repackaged installer and plug-ins
+        run: |
+          mount="$RUNNER_TEMP/irchoir-final-check"
+          mkdir -p "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$PWD/dist/I.R.Choir-0.3.2-unsigned.dmg"
+          trap 'hdiutil detach "$mount"' EXIT
+          sudo installer -pkg "$mount/I.R.Choir-0.3.2-unsigned.pkg" -target / > build/final-install.log 2>&1
+          for bundle in '/Library/Audio/Plug-Ins/Components/IRChoir.component' '/Library/Audio/Plug-Ins/VST3/IRChoir.vst3'; do
+            codesign --verify --strict "$bundle"
+            xcrun lipo "$bundle/Contents/MacOS/IRChoir" -verify_arch arm64 x86_64
+          done
+          "$RUNNER_TEMP/pluginval/pluginval.app/Contents/MacOS/pluginval" --strictness-level 10 --random-seed 12345 --validate '/Library/Audio/Plug-Ins/VST3/IRChoir.vst3' > build/final-pluginval.log 2>&1
+          auval -v aumf IrCh IrAu > build/final-auval.log 2>&1
       - name: Save test logs and native editor snapshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,9 +78,20 @@ jobs:
             build/install.log
             build/auval.log
             build/pluginval.log
+            build/asan-build.log
+            build/asan-tests.log
+            build/final-install.log
+            build/final-pluginval.log
+            build/final-auval.log
       - name: Upload Mac installer
         uses: actions/upload-artifact@v4
         with:
           name: I.R.Choir-Mac-DMG-unsigned
           path: dist/
+          if-no-files-found: error
+      - name: Upload current branded documents
+        uses: actions/upload-artifact@v4
+        with:
+          name: I.R.Choir-Current-Documents
+          path: Documentation/*.pdf
           if-no-files-found: error

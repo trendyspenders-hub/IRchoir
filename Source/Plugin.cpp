@@ -8,6 +8,10 @@
 #include "SpacePresets.h"
 #include <map>
 #include <bitset>
+#include <sstream>
+#include <locale>
+#include <string_view>
+#include <unordered_map>
 
 #if defined(IRCHOIR_TESTING)
 static juce::File irTestRoot=juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("IRChoirSmoke-"+juce::Uuid().toString());
@@ -66,6 +70,8 @@ public:
         return p;
     }
     IRChoir() : AudioProcessor(BusesProperties().withInput("Vocal",juce::AudioChannelSet::stereo(),true).withOutput("Choir",juce::AudioChannelSet::stereo(),true)),state(*this,&undoManager,"IRChoir",parameters()) {
+        for(auto* parameter:getParameters())if(auto* ranged=dynamic_cast<juce::RangedAudioParameter*>(parameter))
+            parameterCache.emplace(std::string_view(ranged->paramID.toRawUTF8()),state.getRawParameterValue(ranged->paramID));
         for(int i=0;i<32;++i) {
             auto id=juce::String(i);
             pans[i]=state.getRawParameterValue("pan"+id); levels[i]=state.getRawParameterValue("level"+id);
@@ -124,7 +130,7 @@ public:
         detector.prepare(sr);voiceLow.fill(0);eqLow.fill(0);eqHigh.fill(0);compressorEnv=0;
         write=0;delayWrite=0;ratios.fill(1.);for(auto& grain:grains)grain.phase=0;
         for(auto& meter:meters)meter.store(0);
-        outputL.store(0);outputR.store(0);clipped.store(false);
+        outputL.store(0);outputR.store(0);correlation.store(1);monoRms.store(0);detectedHz.store(0);clipped.store(false);
     }
     void midiEvent(const juce::MidiMessage& m) {
         int channel=juce::jlimit(0,15,m.getChannel()-1);
@@ -180,10 +186,10 @@ public:
         auto midiIterator=midi.cbegin();auto targets=midiTargets();
         const auto length=ring.size();
         for(int s=0;s<b.getNumSamples();++s) {
-            while(midiIterator!=midi.cend() && (*midiIterator).samplePosition<=s) {midiEvent((*midiIterator).getMessage());++midiIterator;targets=midiTargets();}
+            while(midiIterator!=midi.cend() && (*midiIterator).samplePosition<=s) {if((*midiIterator).numBytes<=3)midiEvent((*midiIterator).getMessage());++midiIterator;targets=midiTargets();}
             float l=b.getSample(0,s),r=channels>1?b.getSample(1,s):l;
-            if(!std::isfinite(l))l=0;
-            if(!std::isfinite(r))r=0;
+            l=std::isfinite(l)?juce::jlimit(-64.f,64.f,l):0.f;
+            r=std::isfinite(r)?juce::jlimit(-64.f,64.f,r):0.f;
             ring[write]=(l+r)*0.5f;
             const float f0=detector.process((l+r)*0.5f);
             const double window=f0>65?std::clamp(sr/f0*8.,sr*0.012,sr*0.13):sr*0.05;
@@ -320,7 +326,7 @@ public:
     void applySpacePreset(size_t index) {
         if(index>=ir::spacePresets.size())return;
         const auto& preset=ir::spacePresets[index];
-        undoManager.beginNewTransaction("Reverb place preset");
+        state.copyState();undoManager.beginNewTransaction("Reverb place preset");
         auto put=[this](const char* id,float value) {
             auto* parameter=state.getParameter(id);parameter->beginChangeGesture();
             state.getParameterAsValue(id).setValue(parameter->getNormalisableRange().snapToLegalValue(value));
@@ -335,14 +341,21 @@ public:
     }
     void getStateInformation(juce::MemoryBlock& out) override { auto tree=state.copyState();tree.setProperty("vocalFilePath",vocalFile.path(),nullptr);tree.setProperty("vocalFileEnabled",vocalFile.enabled.load(),nullptr);tree.setProperty("vocalFileLoop",vocalFile.loop.load(),nullptr);auto xml=tree.createXml(); copyXmlToBinary(*xml,out); }
     void setStateInformation(const void* data,int size) override { auto xml=getXmlFromBinary(data,size); if(xml && xml->hasTagName(state.state.getType())) {
-        auto tree=juce::ValueTree::fromXml(*xml);state.replaceState(tree);
+        auto tree=juce::ValueTree::fromXml(*xml);
+        for(auto child:tree)if(auto* parameter=state.getParameter(child.getProperty("id").toString())) {
+            auto text=child.getProperty("value").toString();std::istringstream input(text.toStdString());input.imbue(std::locale::classic());
+            double number=0;input>>number;if(!input || !std::isfinite(number))return;input>>std::ws;if(!input.eof())return;
+            const auto range=parameter->getNormalisableRange();
+            child.setProperty("value",range.snapToLegalValue(static_cast<float>(std::clamp(number,static_cast<double>(range.start),static_cast<double>(range.end)))),nullptr);
+        }
+        state.replaceState(tree);
         vocalFile.stop();vocalFile.loop.store(static_cast<bool>(tree.getProperty("vocalFileLoop",false)));
         auto path=tree.getProperty("vocalFilePath").toString();
-        if(path.isNotEmpty())vocalFile.loadFile(juce::File(path),static_cast<bool>(tree.getProperty("vocalFileEnabled",false)));
-        vocalFile.enabled.store(static_cast<bool>(tree.getProperty("vocalFileEnabled",false)));
+        vocalFile.loadFile(path.isNotEmpty()?juce::File(path):juce::File{},static_cast<bool>(tree.getProperty("vocalFileEnabled",false)),true);
     } }
 private:
-    float raw(const juce::String& id) const {return state.getRawParameterValue(id)->load();}
+    float raw(std::string_view id) const {auto found=parameterCache.find(id);jassert(found!=parameterCache.end());return found!=parameterCache.end()?found->second->load(std::memory_order_relaxed):0.f;}
+    std::unordered_map<std::string_view,std::atomic<float>*> parameterCache;
     double sr=44100;
     std::vector<float> ring;
     std::array<std::vector<float>,2> delayBuffer;
@@ -399,7 +412,7 @@ public:
         presets.addItem("FX / Crowd Wash",9);
         presets.setTextWhenNothingSelected("Ensemble presets");
         presets.onChange=[this] { applyPreset(presets.getSelectedId()); };
-        addAndMakeVisible(selectedLabel); selectedLabel.setColour(juce::Label::textColourId,juce::Colours::white);
+        addAndMakeVisible(selectedLabel);selectedLabel.setComponentID("singer-inspector"); selectedLabel.setColour(juce::Label::textColourId,juce::Colours::white);
         for(auto* slider:{&singerPan,&singerLevel}) {
             addAndMakeVisible(*slider); slider->setSliderStyle(juce::Slider::LinearHorizontal);
             slider->setTextBoxStyle(juce::Slider::TextBoxRight,false,65,24);
@@ -463,6 +476,8 @@ public:
         reset.setBounds(getWidth()-180,inspector,150,28);
         groupPan.setBounds(165,inspector+35,205,28);groupLevel.setBounds(385,inspector+35,205,28);
         groupMute.setBounds(605,inspector+35,160,28);groupSolo.setBounds(780,inspector+35,190,28);
+        juce::Component* inspectorControls[]={&selectedLabel,&singerPan,&singerLevel,&mute,&solo,&characterBox,&reset,&groupPan,&groupLevel,&groupMute,&groupSolo};
+        for(auto* c:inspectorControls)c->setVisible(!reverbPage);
     }
     void paint(juce::Graphics& g) override {
         const juce::Colour violet(0xffedbb79), ink(0xff0a101d);
@@ -471,6 +486,11 @@ public:
         g.drawText("I.R.Choir",30,20,280,40,juce::Justification::centredLeft);
         g.setFont(12.f); g.setColour(juce::Colour(0xffa8b0c7));
         g.drawText("THE ENSEMBLE IS YOUR INSTRUMENT",31,64,450,20,juce::Justification::centredLeft);
+        if(view.getSelectedId()==7) {
+            paintReverbSpace(g);paintConductorAndMeters(g);
+            g.setColour(juce::Colour(0xffadb4cd));g.setFont(12.f);
+            g.drawText("CHOOSE A PLACE BELOW  /  SHAPE THE SPACE WITH PRE-DELAY, WIDTH AND DAMPING",30,137,getWidth()-320,20,juce::Justification::centred);
+        } else {
         auto st=stage();
         g.setGradientFill(juce::ColourGradient(juce::Colour(0xff242343),st.getCentreX(),st.getY(),ink,st.getCentreX(),st.getBottom(),false));
         g.fillRoundedRectangle(st.expanded(12.f,35.f),18.f);
@@ -506,16 +526,18 @@ public:
         g.drawText("SHIFT-CLICK: GROUP     DRAG: PAN + LEVEL     DOUBLE-CLICK: MUTE",30,137,getWidth()-320,20,juce::Justification::centred);
         g.drawText("LEFT",static_cast<int>(st.getX()),static_cast<int>(st.getY()+2),100,20,juce::Justification::left);
         g.drawText("RIGHT",static_cast<int>(st.getRight()-100),static_cast<int>(st.getY()+2),100,20,juce::Justification::right);
+        }
         g.setColour(juce::Colour(0xff818ba5)); g.setFont(11.f);
-        g.drawText("VOCAL ENSEMBLE EFFECT  /  AUDIO-REACTIVE STAGE  /  v0.3 SOURCE PROTOTYPE / SYNTHETIC VOICE COLORS",30,getHeight()-23,getWidth()-60,17,juce::Justification::centred);
+        g.drawText("I.R.CHOIR 0.3.2  /  VOCAL ENSEMBLE",30,getHeight()-23,getWidth()-60,17,juce::Justification::centred);
     }
     void mouseDown(const juce::MouseEvent& e) override {
-        endDrag();processor.undoManager.beginNewTransaction("Stage edit");
+        endDrag();processor.state.copyState();processor.undoManager.beginNewTransaction("Stage edit");
         if(pad().contains(e.position)) {
             padDragging=true;
             processor.state.getParameter("intensity")->beginChangeGesture();processor.state.getParameter("space")->beginChangeGesture();
             dragPad(e.position);return;
         }
+        if(view.getSelectedId()==7)return;
         int hit=hitSinger(e.position); if(hit<0) {selectedSet.reset();repaint();return;}
         if(e.mods.isShiftDown())selectedSet.flip(static_cast<size_t>(hit));
         else if(!selectedSet.test(static_cast<size_t>(hit))) {selectedSet.reset();selectedSet.set(static_cast<size_t>(hit));}
@@ -538,6 +560,7 @@ public:
     }
     void mouseUp(const juce::MouseEvent&) override { endDrag(); }
     void mouseDoubleClick(const juce::MouseEvent& e) override {
+        if(view.getSelectedId()==7)return;
         int hit=hitSinger(e.position); if(hit>=0) { selectedSet.reset();selectedSet.set(static_cast<size_t>(hit));select(hit); auto id="mute"+juce::String(hit); set(id,value(id)>0.5f?0.f:1.f); }
     }
     ~ChoirEditor() override { endDrag(); }
@@ -587,7 +610,7 @@ private:
     std::array<juce::TextButton,6> reverbButtons;
     std::array<std::unique_ptr<ButtonAttachment>,6> reverbAttachments;
     juce::StringArray userPaths,favourites;
-    juce::String currentPreset="Factory:1";
+    juce::String currentPreset;
     bool favouritesOnly=false;
     float outputDisplayL=0,outputDisplayR=0;
     juce::File presetFolder() const {
@@ -608,6 +631,64 @@ private:
     }
     juce::Rectangle<float> pad() const {return {static_cast<float>(getWidth()-245),195.f,200.f,200.f};}
     void paintConductorAndMeters(juce::Graphics&);
+    void paintReverbSpace(juce::Graphics& g) const {
+        const juce::Colour gold(0xffedbb79),muted(0xff9ba8c1);
+        juce::Rectangle<float> r{33.f,195.f,static_cast<float>(getWidth()-315),static_cast<float>(getHeight()-480)};
+        g.setGradientFill(juce::ColourGradient(juce::Colour(0xff242a41),r.getX(),r.getY(),juce::Colour(0xff101724),r.getRight(),r.getBottom(),false));
+        g.fillRoundedRectangle(r,15.f);g.setColour(juce::Colour(0xff3e4963));g.drawRoundedRectangle(r,15,1);
+        auto name=processor.state.state.getProperty("spacePresetName").toString();
+        juce::String category="Algorithmic room";
+        for(const auto& preset:ir::spacePresets)if(name==preset.name){category=preset.category;break;}
+        if(name.isEmpty()) {const char* rooms[]={"Studio","Hall","Cathedral","Chamber","Plate-style","Tunnel-style"};name=rooms[juce::jlimit(0,5,static_cast<int>(value("roomType")))];}
+        g.setColour(gold);g.setFont(23.f);g.drawText(name,r.reduced(20,8).withHeight(33),juce::Justification::centredLeft);
+        g.setColour(muted);g.setFont(11.f);g.drawText(category.toUpperCase()+"  /  ORIGINAL ILLUSTRATION  /  ALGORITHMIC DESIGN",r.reduced(20,8).translated(0,33).withHeight(18),juce::Justification::centredLeft);
+        auto scene=r.reduced(20,0).withTrimmedTop(64).withTrimmedBottom(104);
+        float cx=scene.getCentreX(),backY=scene.getY()+scene.getHeight()*0.58f;
+        float backW=scene.getWidth()*0.47f,backX=cx-backW*0.5f;
+        g.setColour(juce::Colour(0xff1c2639));g.fillRoundedRectangle(scene,6.f);
+        juce::Path floor;floor.startNewSubPath(backX,backY);floor.lineTo(backX+backW,backY);floor.lineTo(scene.getRight(),scene.getBottom());floor.lineTo(scene.getX(),scene.getBottom());floor.closeSubPath();
+        g.setColour(juce::Colour(0xff273448));g.fillPath(floor);
+        g.setColour(gold.withAlpha(0.12f));
+        for(int j=0;j<9;++j)g.drawLine(backX+backW*j/8.f,backY,scene.getX()+scene.getWidth()*j/8.f,scene.getBottom(),0.8f);
+        for(int j=1;j<4;++j){float y=backY+(scene.getBottom()-backY)*j/4.f;g.drawHorizontalLine(static_cast<int>(y),scene.getX(),scene.getRight());}
+        const bool forest=category=="Forests",cave=category=="Caves" || category=="The Catacombs";
+        const bool arches=category=="Churches" || category=="Opera House" || category=="Train Stations" || category=="Concert Halls";
+        const bool plate=category=="Plates" || category=="Digital" || category=="Tanks";
+        if(forest) {
+            for(int j=0;j<13;++j){float x=scene.getX()+10+j*(scene.getWidth()-20)/12.f,h=scene.getHeight()*(0.50f+0.08f*(j%3));
+                g.setColour(juce::Colour(0xff405c55));g.drawLine(x,backY+15,x,backY-h,2.2f);
+                for(int branch=0;branch<4;++branch){float y=backY-h+branch*h/5;g.drawLine(x,y,x-12,y+17,1.3f);g.drawLine(x,y,x+12,y+17,1.3f);}}
+        } else if(cave) {
+            for(int j=0;j<5;++j){float inset=static_cast<float>(j)*scene.getWidth()*0.055f;juce::Path rock;
+                rock.startNewSubPath(scene.getX()+inset,scene.getBottom()-j*5.f);rock.lineTo(scene.getX()+inset+12,scene.getY()+30+j*6.f);rock.lineTo(cx-38+j*4.f,scene.getY()+6+j*7.f);rock.lineTo(cx+58-j*4.f,scene.getY()+15+j*6.f);rock.lineTo(scene.getRight()-inset-10,scene.getY()+34+j*5.f);rock.lineTo(scene.getRight()-inset,scene.getBottom()-j*5.f);
+                g.setColour(gold.withAlpha(0.12f+0.025f*j));g.strokePath(rock,juce::PathStrokeType(2.f));}
+        } else if(plate) {
+            auto metal=scene.reduced(scene.getWidth()*0.18f,12.f);g.setColour(juce::Colour(0xff354054));g.fillRoundedRectangle(metal,8);
+            g.setColour(gold.withAlpha(0.5f));g.drawRoundedRectangle(metal,8,1.2f);
+            for(int j=0;j<6;++j) {float inset=static_cast<float>(j)*10;g.setColour(gold.withAlpha(0.24f-j*0.025f));g.drawEllipse(metal.reduced(inset+12,6+j*4.f),1);}
+        } else {
+            for(int j=0;j<5;++j){float fraction=j/5.f;float x=scene.getX()+fraction*(backX-scene.getX()),w=scene.getWidth()-2*fraction*(backX-scene.getX());float y=scene.getY()+fraction*25,h=backY-y+18;
+                juce::Path frame;frame.startNewSubPath(x,backY+20);
+                if(arches){frame.lineTo(x,y+h*0.48f);frame.cubicTo(x,y-18,x+w,y-18,x+w,y+h*0.48f);frame.lineTo(x+w,backY+20);}
+                else {frame.lineTo(x,y);frame.lineTo(x+w,y);frame.lineTo(x+w,backY+20);}
+                g.setColour(gold.withAlpha(0.13f+fraction*0.18f));g.strokePath(frame,juce::PathStrokeType(1.5f));}
+            if(category=="Studios" || category=="Rock Rooms")for(int j=0;j<7;++j){g.setColour(juce::Colour(0xff435369));g.fillRoundedRectangle(backX+j*backW/7,scene.getY()+35,backW/9,backY-scene.getY()-45,2);}
+        }
+        // A miniature of the current choir; editing remains on the choir pages.
+        const int n=static_cast<int>(value("voices"));
+        for(int i=0;i<n;++i){juce::Graphics::ScopedSaveState saved(g);float pan=value("pan"+juce::String(i));float x=cx+pan*backW*0.40f,y=backY-6+(i%4)*9.f;
+            g.addTransform(juce::AffineTransform::scale(0.47f).translated(x,y));
+            float activity=static_cast<int>(value("animation"))==2?0.f:juce::jlimit(0.f,1.f,displayMeters[i]*3.f);
+            paintSinger(g,{0,0},i,gold,activity,value("mute"+juce::String(i))>0.5f);}
+        auto plot=r.reduced(20,0).withTrimmedTop(r.getHeight()-87).withHeight(56);
+        float pre=value("revPredelay")/200.f*plot.getWidth()*0.22f;
+        juce::Path shape;shape.startNewSubPath(plot.getX(),plot.getBottom());shape.lineTo(plot.getX()+pre,plot.getBottom());shape.lineTo(plot.getX()+pre,plot.getY()+4);
+        for(int j=1;j<=100;++j){float t=j/100.f;float e=std::exp(-t*(8.f-6.f*value("revDecay")));shape.lineTo(plot.getX()+pre+t*(plot.getWidth()-pre),plot.getBottom()-e*(plot.getHeight()-4));}
+        g.setColour(gold.withAlpha(0.12f));auto fill=shape;fill.lineTo(plot.getRight(),plot.getBottom());fill.closeSubPath();g.fillPath(fill);
+        g.setColour(gold);g.strokePath(shape,juce::PathStrokeType(1.6f));
+        g.setColour(muted);g.setFont(10.f);g.drawText("PRE-DELAY + RELATIVE DECAY SHAPE  /  NOT A MEASURED IMPULSE RESPONSE",plot.translated(0,plot.getHeight()+5).withHeight(15),juce::Justification::centredLeft);
+    }
+
     // Deterministic visual identities only; these do not imply sampled voice models.
     void paintSinger(juce::Graphics& g,juce::Point<float> pos,int singer,
                      juce::Colour accent,float activity,bool muted) const {
@@ -706,7 +787,7 @@ private:
     }
     void applyPreset(int p) {
         if(p<1 || p>9)return;
-        processor.undoManager.beginNewTransaction("Factory preset");
+        processor.state.copyState();processor.undoManager.beginNewTransaction("Factory preset");
         struct Preset {float count,movement,room,width,mix,gain;};
         const Preset bank[]={
             {4,0.12f,0.05f,0.35f,0.65f,-3},
@@ -722,7 +803,7 @@ private:
         // A factory preset is deterministic: reset all sonic parameters first.
         for(auto* parameter:processor.getParameters()) {
             auto* param=dynamic_cast<juce::RangedAudioParameter*>(parameter);
-            if(param && param->getName(100)!="Animation") {param->beginChangeGesture();param->setValueNotifyingHost(param->getDefaultValue());param->endChangeGesture();}
+            if(param && param->paramID!="animation") {set(param->paramID,param->convertFrom0to1(param->getDefaultValue()));}
         }
         const auto& fx=bank[p-1];
         set("voices",fx.count); set("movement",fx.movement); set("room",fx.room);
@@ -740,10 +821,13 @@ private:
         if(p==7) {set("delay",0.25f);set("delayTime",380);set("high",-3);}
         if(p==8) {set("roomType",2);set("delay",0.12f);set("delayTime",170);}
         if(p==9) {set("drive",0.25f);set("compression",0.4f);set("drift",15);set("vibrato",12);}
-        processor.state.state.removeProperty("spacePresetName",nullptr);
+        processor.state.state.removeProperty("spacePresetName",&processor.undoManager);
         currentPreset="Factory:"+juce::String(p);
+        processor.state.state.setProperty("soundPresetKey",currentPreset,&processor.undoManager);
     }
     void timerCallback() override {
+        auto presetKey=processor.state.state.getProperty("soundPresetKey").toString();
+        if(currentPreset!=presetKey) {currentPreset=presetKey;refreshPresetMenu();}
         const auto placeName=processor.state.state.getProperty("spacePresetName").toString();
         juce::String placeText;
         for(const auto& preset:ir::spacePresets)if(placeName==preset.name) {
@@ -757,6 +841,7 @@ private:
         fileInput.setToggleState(processor.vocalFile.enabled.load(),juce::dontSendNotification);
         loopVocal.setToggleState(processor.vocalFile.loop.load(),juce::dontSendNotification);
         playVocal.setButtonText(processor.vocalFile.playing.load()?"Stop":"Play");
+        playVocal.setEnabled(processor.vocalFile.playing.load() || (processor.vocalFile.isReady() && !processor.vocalFile.loading.load()));
         for(int i=0;i<32;++i) displayMeters[i]=juce::jmax(processor.meters[i].load(std::memory_order_relaxed),displayMeters[i]*0.87f);
         if(selected>=static_cast<int>(value("voices")))select(0);
         outputDisplayL=std::max(processor.outputL.load(),outputDisplayL*0.9f);outputDisplayR=std::max(processor.outputR.load(),outputDisplayR*0.9f);
@@ -856,6 +941,7 @@ void ChoirEditor::setupExtras() {
     savePreset.setButtonText("Save");favourite.setButtonText("Star");favOnly.setButtonText("Favourites");
     addAndMakeVisible(saveName);saveName.setComponentID("preset-name");saveName.setTextToShowWhenEmpty("Name your preset",juce::Colours::grey);
     addAndMakeVisible(helpLabel);helpLabel.setComponentID("status");helpLabel.setText("Group sliders below the selected singer affect the whole selection. MIDI mode needs a monophonic vocal plus routed MIDI notes.",juce::dontSendNotification);
+    currentPreset=processor.state.state.getProperty("soundPresetKey").toString();
     auto favFile=presetFolder().getParentDirectory().getChildFile("favourites.txt");
     favourites.addLines(favFile.loadFileAsString());
     savePreset.onClick=[this] {
@@ -866,9 +952,10 @@ void ChoirEditor::setupExtras() {
         auto file=folder.getNonexistentChildFile(name,".irchoir.xml",false);
         auto xml=processor.state.copyState().createXml();
         if(!xml->writeTo(file)) {helpLabel.setText("Preset could not be saved.",juce::dontSendNotification);return;}
-        currentPreset=file.getFullPathName();helpLabel.setText("Saved "+file.getFileName(),juce::dontSendNotification);refreshPresetMenu();
+        currentPreset=file.getFullPathName();processor.state.state.setProperty("soundPresetKey",currentPreset,nullptr);helpLabel.setText("Saved "+file.getFileName(),juce::dontSendNotification);refreshPresetMenu();
     };
     favourite.onClick=[this] {
+        if(currentPreset.isEmpty()) {helpLabel.setText("Choose or save a preset before adding a favourite.",juce::dontSendNotification);return;}
         if(favourites.contains(currentPreset))favourites.removeString(currentPreset);else favourites.add(currentPreset);
         auto folder=presetFolder().getParentDirectory();auto status=folder.createDirectory();
         if(status.failed() || !folder.getChildFile("favourites.txt").replaceWithText(favourites.joinIntoString("\n")))
@@ -912,13 +999,17 @@ void ChoirEditor::refreshPresetMenu() {
         if(!favouritesOnly || star)presets.addItem((star?"* ":"")+file.getFileNameWithoutExtension(),id);
     }
     presets.setTextWhenNothingSelected(favouritesOnly?"Favourite presets":"Choose preset");
+    int selectedId=0;
+    if(currentPreset.startsWith("Factory:"))selectedId=currentPreset.fromFirstOccurrenceOf(":",false,false).getIntValue();
+    else {int index=userPaths.indexOf(currentPreset);if(index>=0)selectedId=1000+index;}
+    if(presets.indexOfItemId(selectedId)>=0)presets.setSelectedId(selectedId,juce::dontSendNotification);
 }
 void ChoirEditor::choosePreset(int id) {
     endDrag();
     if(id>=1 && id<=9)applyPreset(id);
     else if(id>=1000 && id-1000<userPaths.size()) {
         auto path=userPaths[id-1000];auto xml=juce::XmlDocument::parse(juce::File(path));
-        if(xml && xml->hasTagName("IRChoir")) {processor.state.replaceState(juce::ValueTree::fromXml(*xml));currentPreset=path;}
+        if(xml && xml->hasTagName("IRChoir")) {processor.state.replaceState(juce::ValueTree::fromXml(*xml));currentPreset=path;processor.state.state.setProperty("soundPresetKey",currentPreset,nullptr);}
         else helpLabel.setText("This preset could not be read.",juce::dontSendNotification);
     }
 }

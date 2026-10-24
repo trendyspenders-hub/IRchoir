@@ -13,4 +13,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DIRCHOIR_BUILD_TESTS=ON
 cmake --build build --config Release --parallel 3
 ctest --test-dir build -C Release --output-on-failure
+if [[ -n "${IRCHOIR_DOC_PYTHON:-}" ]]; then
+  cp build/IRChoir-editor-smoke.png TestEvidence/IRChoir-Native-Interface.png
+  cp build/IRChoir-reverb-smoke.png TestEvidence/IRChoir-Reverb-Interface.png
+  "$IRCHOIR_DOC_PYTHON" Scripts/make-documents.py
+fi
 bash Scripts/package-mac.sh
