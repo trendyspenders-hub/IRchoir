@@ -48,3 +48,7 @@ algorithmic reverb, not measured venues or third-party impulse responses.
 
 Research recommendations in Documentation/GITHUB-QUALITY-REVIEW.md are not
 implemented integrations. See that review for the proposed next quality gates.
+
+Pro Tools: the AU/VST3 installer does not load directly in Pro Tools. See
+Documentation/PROTOOLS-AAX.txt for the separate unsigned AAX developer target,
+required Avid/PACE signing and uncompleted host testing.

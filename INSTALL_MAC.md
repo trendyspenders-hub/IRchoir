@@ -43,3 +43,7 @@ Mac native/Intel builds; auval; VST3 validation; a fresh machine install/uninsta
 Logic/Ableton/REAPER routing and project recall; long playback and automation;
 CPU and dropout measurements; listening tests, especially with real vocals,
 unvoiced consonants, noisy input, rapid pitch changes and stereo cancellation.
+
+Pro Tools: the AU/VST3 installer does not load directly in Pro Tools. See
+Documentation/PROTOOLS-AAX.txt for the separate unsigned AAX developer target,
+required Avid/PACE signing and uncompleted host testing.

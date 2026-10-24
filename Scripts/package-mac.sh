@@ -50,7 +50,7 @@ cp INSTALL_MAC.md "$work/image/READ-ME-FIRST.txt"
 cp AUDIT.md "$work/image/BUILD-AUDIT.txt"
 cp LICENSE.txt "$work/image/LICENSE.txt"
 # Include original and framework source alongside the default AGPL build.
-tar --exclude=build --exclude=build-asan --exclude=dist --exclude=.git -czf "$work/image/I.R.Choir-source.tar.gz" .
+tar --exclude=build --exclude=build-asan --exclude=build-aax --exclude=dist --exclude=.git -czf "$work/image/I.R.Choir-source.tar.gz" .
 juce_source="${IRCHOIR_JUCE_SOURCE:-build/_deps/juce-src}"
 [[ -f "$juce_source/LICENSE.md" ]] || { echo 'Cannot locate corresponding JUCE source; set IRCHOIR_JUCE_SOURCE.' >&2; exit 1; }
 cp "$juce_source/LICENSE.md" "$work/image/JUCE-LICENSE.md"

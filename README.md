@@ -124,3 +124,7 @@ DAW project state remembers the absolute file path, source switch and loop
 setting. Playback restores stopped. Audio is not embedded: keep the original
 file in place, or use Load vocal again to relink after moving it. Sound presets
 and A/B compare sound settings; they do not package recordings.
+
+Pro Tools: the AU/VST3 installer does not load directly in Pro Tools. See
+Documentation/PROTOOLS-AAX.txt for the separate unsigned AAX developer target,
+required Avid/PACE signing and uncompleted host testing.

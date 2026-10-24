@@ -1,0 +1,36 @@
+I.R.CHOIR - PRO TOOLS / AAX STATUS (0.3.2)
+
+The standard DMG installs AU and VST3. These do not load directly in Pro Tools.
+A separate AAX developer target is available, using JUCE 8.0.6 bundled SDK.
+It is NOT PACE signed and is NOT a retail Pro Tools compatible release.
+Successful compilation checks only the binary, not Pro Tools operation.
+Do not rename an AU or VST3 bundle to .aaxplugin.
+
+DEVELOPER BUILD ON MAC
+cmake -S . -B build-aax -DCMAKE_BUILD_TYPE=Release '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DIRCHOIR_BUILD_AAX=ON -DIRCHOIR_BUILD_TESTS=OFF
+cmake --build build-aax --target IRChoir_AAX --parallel 3
+Output: build-aax/IRChoir_artefacts/Release/AAX/IRChoir.aaxplugin
+Developer install directory: /Library/Application Support/Avid/Audio/Plug-Ins
+Only use an unsigned build with an authorized Pro Tools Developer host.
+The separate GitHub AAX developer workflow archives it as a ZIP; the standard
+AU/VST3 installer deliberately does not install an unsigned AAX bundle.
+
+REQUIRED BEFORE CLAIMING PRO TOOLS SUPPORT
+1. Obtain Avid developer access and Pro Tools Developer testing authorization.
+2. Test insert scanning, mono/stereo routing, MIDI input, imported file playback,
+   automation, bypass, save/reopen, missing files, sample-rate/buffer changes,
+   offline Bounce/Mix and long sessions. Manual imported playback is not host
+   synchronized, so offline bounces need particular attention.
+3. Obtain Avid/PACE Eden signing tools and the required signing authorization.
+   Sign the final AAX binary with the approved process, after binary changes.
+   Apple ad-hoc signing and notarization alone do not replace AAX signing.
+4. Install and repeat testing in the user's actual retail Pro Tools version,
+   macOS and CPU architecture; record versions and results.
+5. Package the tested signed AAX bundle in a dedicated installer and verify it.
+
+No Avid/PACE credentials or authorized Pro Tools test host are present here.
+No Pro Tools compatibility result is claimed. Do not disable Pro Tools security.
+
+Official references:
+https://developer.avid.com/aax/
+https://github.com/juce-framework/JUCE/blob/8.0.6/README.md#aax-plug-ins

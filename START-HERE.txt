@@ -11,3 +11,7 @@ compatibility checks remain. Read AUDIT.md for coverage and limitations.
 Rebuild on a Mac with CMake and Xcode command line tools:
   bash Scripts/build-mac.sh
 Or double-click Build-I.R.Choir.command.
+
+Pro Tools: the AU/VST3 installer does not load directly in Pro Tools. See
+Documentation/PROTOOLS-AAX.txt for the separate unsigned AAX developer target,
+required Avid/PACE signing and uncompleted host testing.
