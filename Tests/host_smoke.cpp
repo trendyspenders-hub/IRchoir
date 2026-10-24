@@ -5,6 +5,7 @@
 #include <limits>
 #include <thread>
 #include <chrono>
+#include "flac_fixture.h"
 static void require(bool ok,const char* message) {if(!ok)throw std::runtime_error(message);}
 static void param(IRChoir& p,const char* id,float v) {auto* a=p.state.getParameter(id);require(a!=nullptr,"Missing parameter");a->setValueNotifyingHost(a->convertTo0to1(v));}
 static void findComponents(juce::Component& c,std::vector<juce::ComboBox*>& boxes,std::vector<juce::TextButton*>& buttons) {
@@ -132,9 +133,11 @@ int main() {
             require(!emptyPlayer.togglePlayback() && !emptyPlayer.playing.load() && !emptyPlayer.enabled.load(),"Empty player entered playback");
             for(int format=0;format<2;++format) {
                 auto encoded=irTestRoot.getChildFile(format==0?"Test vocal.aiff":"Test vocal.flac");
-                std::unique_ptr<juce::AudioFormat> encoder=format==0?std::unique_ptr<juce::AudioFormat>(new juce::AiffAudioFormat):std::unique_ptr<juce::AudioFormat>(new juce::FlacAudioFormat);
-                std::unique_ptr<juce::AudioFormatWriter> encode(encoder->createWriterFor(encoded.createOutputStream().release(),44100,1,16,{},0));
-                require(encode && encode->writeFromAudioSampleBuffer(source,0,source.getNumSamples()),"Cannot create AIFF/FLAC fixture");encode.reset();
+                if(format==0) {
+                    juce::AiffAudioFormat encoder;
+                    std::unique_ptr<juce::AudioFormatWriter> encode(encoder.createWriterFor(encoded.createOutputStream().release(),44100,1,16,{},0));
+                    require(encode && encode->writeFromAudioSampleBuffer(source,0,source.getNumSamples()),"Cannot create AIFF fixture");
+                } else require(encoded.replaceWithData(irFlacFixture,sizeof(irFlacFixture)),"Cannot write fixed FLAC import fixture");
                 VocalFilePlayer decoder;require(decoder.loadForTest(encoded),"Advertised AIFF/FLAC import failed");
             }
             {
