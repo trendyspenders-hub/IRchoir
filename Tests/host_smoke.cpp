@@ -252,6 +252,8 @@ int main() {
         auto* name=dynamic_cast<juce::TextEditor*>(editor->findChildWithID("preset-name"));require(name!=nullptr,"No preset name input");
         name->setText("Smoke preset");param(p,"low",5);save->onClick();
         auto files=irTestRoot.getChildFile("Presets").findChildFiles(juce::File::findFiles,false,"*.irchoir.xml");require(files.size()==1,"Preset not saved");
+        // Saving retains the selected preset. Switch away before exercising an actual reload.
+        for(auto* box:boxes)if(box->indexOfItemId(1000)>=0)box->setSelectedId(1,juce::sendNotificationSync);
         param(p,"low",-5);
         for(auto* box:boxes)if(box->indexOfItemId(1000)>=0)box->setSelectedId(1000,juce::sendNotificationSync);
         require(std::abs(p.state.getRawParameterValue("low")->load()-5)<0.00001f,"Custom preset not loaded");
